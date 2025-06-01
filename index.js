@@ -40,9 +40,37 @@ bot.once('spawn', () => {
   const defaultMove = new Movements(bot, mcData);
   bot.pathfinder.setMovements(defaultMove);
 
-  const center = config.walkCenter;
-  const radius = 3;
-  let angle = 0;
+  // House center and size for walking
+  const houseCenter = new Vec3(-1244, 72, -448);
+  const houseSize = 11; // 11x11 blocks
+
+  // Calculate corners of the house perimeter to walk around
+  const points = [
+    new Vec3(houseCenter.x - Math.floor(houseSize / 2), houseCenter.y, houseCenter.z - Math.floor(houseSize / 2)),
+    new Vec3(houseCenter.x + Math.floor(houseSize / 2), houseCenter.y, houseCenter.z - Math.floor(houseSize / 2)),
+    new Vec3(houseCenter.x + Math.floor(houseSize / 2), houseCenter.y, houseCenter.z + Math.floor(houseSize / 2)),
+    new Vec3(houseCenter.x - Math.floor(houseSize / 2), houseCenter.y, houseCenter.z + Math.floor(houseSize / 2)),
+  ];
+
+  let currentPoint = 0;
+
+  function walkAroundHouse() {
+    const goal = new GoalBlock(points[currentPoint].x, points[currentPoint].y, points[currentPoint].z);
+    bot.pathfinder.setGoal(goal);
+    log(`[Move] Walking to house corner ${currentPoint + 1}: (${goal.x}, ${goal.y}, ${goal.z})`);
+
+    const onGoalReached = () => {
+      log(`[Move] Reached house corner ${currentPoint + 1}`);
+      currentPoint = (currentPoint + 1) % points.length;
+      bot.pathfinder.setGoal(null);
+      setTimeout(walkAroundHouse, 3000);
+      bot.removeListener('goal_reached', onGoalReached);
+    };
+
+    bot.once('goal_reached', onGoalReached);
+  }
+
+  walkAroundHouse();
 
   // Prevent block breaking
   bot.dig = async () => {
@@ -87,24 +115,6 @@ bot.once('spawn', () => {
       }
     }
   }, 5000);
-
-  // Walk in a circular pattern
-  function walkInCircle() {
-    const x = center.x + Math.cos(angle) * radius;
-    const z = center.z + Math.sin(angle) * radius;
-    const y = center.y;
-
-    const goal = new GoalBlock(Math.round(x), Math.round(y), Math.round(z));
-    bot.pathfinder.setGoal(goal);
-    log(`[Move] Walking to (${goal.x}, ${goal.y}, ${goal.z})`);
-
-    angle += Math.PI / 3;
-    if (angle >= 2 * Math.PI) angle = 0;
-
-    setTimeout(walkInCircle, 7000);
-  }
-
-  walkInCircle();
 
   // Jump every 5s
   setInterval(() => {
