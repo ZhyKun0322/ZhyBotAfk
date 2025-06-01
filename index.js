@@ -91,6 +91,16 @@ bot.once('spawn', () => {
 bot.on('error', err => log(`[Error] ${err.message}`));
 bot.on('end', () => log(`[Info] Bot disconnected.`));
 
+// 🔁 Auto-reconnect
+bot.on('end', () => {
+  log(`[Reconnect] Attempting to restart bot in 10 seconds...`);
+  setTimeout(() => {
+    require('child_process').spawn(process.argv[0], process.argv.slice(1), {
+      stdio: 'inherit'
+    });
+  }, 10000);
+});
+
 // 📝 Logger
 function log(message) {
   const timestamp = new Date().toISOString();
