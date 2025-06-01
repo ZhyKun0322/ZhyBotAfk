@@ -39,7 +39,7 @@ bot.once('spawn', () => {
   bot.on('time', () => {
     if (bot.time.isNight() && !bot.isSleeping && bot.entity.onGround) {
       const bedBlock = bot.blockAt(bedPos);
-      if (bedBlock && bot.isABed(bedBlock)) {
+      if (bedBlock && bedBlock.name.includes('bed')) {
         bot.sleep(bedBlock).then(() => {
           log(`[Sleep] Bot is sleeping.`);
         }).catch(err => {
@@ -50,11 +50,12 @@ bot.once('spawn', () => {
   });
 
   // 🔁 Circular movement every 1 minute
-  const center = bot.entity.position.clone();
   let angle = 0;
   setInterval(() => {
     const radius = 5;
     angle += Math.PI / 4; // 45 degrees step
+
+    const center = bot.entity.position.clone(); // 🟢 updated dynamically
     const x = center.x + radius * Math.cos(angle);
     const z = center.z + radius * Math.sin(angle);
     const y = center.y;
