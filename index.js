@@ -26,9 +26,6 @@ bot.once('spawn', () => {
   bot.on('message', (jsonMsg) => {
     const message = jsonMsg.toString().toLowerCase();
 
-    // Debug print to tune strings if needed
-    // console.log('Server message:', message);
-
     if (message.includes('register') || message.includes('not registered')) {
       bot.chat(`/register ${password} ${password}`);
       log(`[LoginSecurity] Sent register command`);
@@ -80,12 +77,22 @@ bot.once('spawn', () => {
     }
   }, 5000);
 
-  // 💬 Chat every 1 minute
+  // 💬 Multi-line Chat every minute (1 msg every 3s)
+  const chatMessages = [
+    "I'm still active",
+    "I'm created by zhykun!",
+    "Subscribe to ZhyKun on YouTube!",
+    "Follow ZhyKun on Tiktok!"
+  ];
+
   setInterval(() => {
-    const msg = config.chatMessage || "I'm still active!";
-    bot.chat(msg);
-    log(`[Chat] ${msg}`);
-  }, 60 * 1000);
+    chatMessages.forEach((msg, index) => {
+      setTimeout(() => {
+        bot.chat(msg);
+        log(`[Chat] ${msg}`);
+      }, index * 3000); // 3s interval between messages
+    });
+  }, 60 * 1000); // Every minute
 });
 
 bot.on('error', err => log(`[Error] ${err.message}`));
