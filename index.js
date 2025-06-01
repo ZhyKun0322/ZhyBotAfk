@@ -16,6 +16,9 @@ bot.loadPlugin(pathfinder);
 bot.once('spawn', () => {
   const mcData = require('minecraft-data')(bot.version);
   const defaultMove = new Movements(bot, mcData);
+
+  // ✅ Force walking, never run
+  defaultMove.allowSprinting = false;
   bot.pathfinder.setMovements(defaultMove);
 
   const password = config.loginCode;
@@ -96,12 +99,12 @@ bot.once('spawn', () => {
 
     const goal = new GoalBlock(Math.round(x), Math.round(y), Math.round(z));
     bot.pathfinder.setGoal(goal);
-    log(`[Move] Moving to (${goal.x}, ${goal.y}, ${goal.z})`);
+    log(`[Move] Walking to (${goal.x}, ${goal.y}, ${goal.z})`);
 
-    angle += Math.PI / 3; // 60° step
+    angle += Math.PI / 3;
     if (angle >= 2 * Math.PI) angle = 0;
 
-    setTimeout(walkInCircle, 7000); // walk every 7 seconds
+    setTimeout(walkInCircle, 7000);
   }
 
   walkInCircle();
@@ -132,6 +135,40 @@ bot.once('spawn', () => {
       });
     }, 60000);
   }
+
+  // 🚪 Auto open and close nearby wooden doors
+  let lastDoorOpened = null;
+  bot.on('physicTick', () => {
+    const doorBlock = bot.findBlock({
+      matching: block =>
+        block.name.includes('door') &&
+        !block.name.includes('iron') &&
+        bot.entity.position.distanceTo(block.position) < 2,
+      maxDistance: 2
+    });
+
+    if (doorBlock && doorBlock !== lastDoorOpened) {
+      const isOpen = doorBlock.metadata & 0x4;
+      if (!isOpen) {
+        bot.activateBlock(doorBlock).then(() => {
+          log(`[Door] Opened door at ${doorBlock.position}`);
+          lastDoorOpened = doorBlock;
+
+          setTimeout(() => {
+            const currentState = bot.blockAt(doorBlock.position);
+            if (currentState && (currentState.metadata & 0x4)) {
+              bot.activateBlock(currentState).then(() => {
+                log(`[Door] Closed door at ${doorBlock.position}`);
+              }).catch(() => {});
+            }
+            lastDoorOpened = null;
+          }, 2000); // close after 2 seconds
+        }).catch(err => {
+          log(`[Door] Failed to open: ${err.message}`);
+        });
+      }
+    }
+  });
 });
 
 // 🛑 Handle disconnect and reconnect
@@ -150,4 +187,4 @@ function log(msg) {
   const time = new Date().toISOString();
   console.log(`[${time}] ${msg}`);
   fs.appendFileSync('logs.txt', `[${time}] ${msg}\n`);
-  }
+}
