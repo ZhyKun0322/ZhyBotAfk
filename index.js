@@ -19,7 +19,6 @@ bot.once('spawn', () => {
   bot.pathfinder.setMovements(defaultMove);
 
   const password = config.loginCode;
-  const bedPos = config.bedPosition;
   const center = config.walkCenter;
   const radius = 3;
   let angle = 0;
@@ -51,17 +50,24 @@ bot.once('spawn', () => {
     }
   });
 
-  // 🌙 Sleep at night
+  // 🌙 Sleep at night (auto-detect nearest bed)
   bot.on('time', () => {
     if (bot.time.timeOfDay >= 13000 && bot.time.timeOfDay <= 23999 && !bot.isSleeping) {
-      const bedVec = new Vec3(bedPos.x, bedPos.y, bedPos.z);
-      const bedBlock = bot.blockAt(bedVec);
-      if (bedBlock && bot.isABed(bedBlock)) {
+      const bedPositions = bot.findBlocks({
+        matching: block => bot.isABed(block),
+        maxDistance: 10,
+        count: 1
+      });
+
+      if (bedPositions.length > 0) {
+        const bedBlock = bot.blockAt(bedPositions[0]);
         bot.sleep(bedBlock).then(() => {
-          log(`[Sleep] Sleeping in bed.`);
+          log(`[Sleep] Sleeping in bed at ${bedPositions[0]}`);
         }).catch(err => {
           log(`[Sleep] Failed: ${err.message}`);
         });
+      } else {
+        log(`[Sleep] No nearby bed found.`);
       }
     }
   });
@@ -144,4 +150,4 @@ function log(msg) {
   const time = new Date().toISOString();
   console.log(`[${time}] ${msg}`);
   fs.appendFileSync('logs.txt', `[${time}] ${msg}\n`);
-}
+  }
