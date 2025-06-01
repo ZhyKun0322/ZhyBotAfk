@@ -1,7 +1,9 @@
 // 📁 mineflayer-bot-template/index.js
+// ✅ Bot walks, looks around, jumps, chats, handles LoginSecurity, sleeps in bed, and eats food
 
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals: { GoalBlock } } = require('mineflayer-pathfinder');
+const Vec3 = require('vec3');
 const fs = require('fs');
 const config = require('./config.json');
 
@@ -21,10 +23,9 @@ bot.once('spawn', () => {
 
   const password = config.loginCode;
 
-  // ⛨ LoginSecurity
+  // Handle LoginSecurity smarter (register or login)
   bot.on('message', (jsonMsg) => {
     const message = jsonMsg.toString().toLowerCase();
-
     if (message.includes('register') || message.includes('not registered')) {
       bot.chat(`/register ${password} ${password}`);
       log(`[LoginSecurity] Sent register command`);
@@ -34,14 +35,17 @@ bot.once('spawn', () => {
     }
   });
 
-  // 🌙 Sleep at night
-  const bedPosition = { x: -1289, y: 73, z: -416 };
+  // Bed position from config
+  const bedPos = new Vec3(config.bedPosition.x, config.bedPosition.y, config.bedPosition.z);
+
+  // Sleep at night
   bot.on('time', () => {
-    if (isNightTime() && !bot.isSleeping && bot.entity.onGround) {
-      const bedBlock = bot.blockAt(bedPosition);
+    // Minecraft night time: from 13000 to 23000 ticks
+    if (bot.time.timeOfDay >= 13000 && bot.time.timeOfDay <= 23000 && !bot.isSleeping && bot.entity.onGround) {
+      const bedBlock = bot.blockAt(bedPos);
       if (bedBlock && bot.isABed(bedBlock)) {
         bot.sleep(bedBlock).then(() => {
-          log(`[Sleep] Bot is sleeping at the bed.`);
+          log('[Sleep] Bot is sleeping.');
         }).catch(err => {
           log(`[Sleep] Failed to sleep: ${err.message}`);
         });
@@ -49,12 +53,7 @@ bot.once('spawn', () => {
     }
   });
 
-  function isNightTime() {
-    const time = bot.time.timeOfDay || 0;
-    return time >= 13000 && time <= 23000;
-  }
-
-  // 🍗 Auto-eat
+  // Eat food automatically if hungry
   setInterval(() => {
     if (bot.food < 18) {
       const foodItem = bot.inventory.items().find(item =>
@@ -70,7 +69,7 @@ bot.once('spawn', () => {
     }
   }, 5000);
 
-  // 🚶 Walk and look
+  // Walk and look around randomly
   function walkAndLook() {
     const pos = bot.entity.position;
     const x = pos.x + Math.floor(Math.random() * 10 - 5);
@@ -98,7 +97,7 @@ bot.once('spawn', () => {
 
   walkAndLook();
 
-  // ⬆️ Jump every 5s
+  // Jump every 5 seconds
   setInterval(() => {
     if (bot.entity.onGround) {
       bot.setControlState('jump', true);
@@ -106,14 +105,14 @@ bot.once('spawn', () => {
     }
   }, 5000);
 
-  // 💬 Chat
+  // Chat main message every minute
   setInterval(() => {
     const msg = config.chatMessage || "I'm still active!";
     bot.chat(msg);
     log(`[Chat] ${msg}`);
-  }, 60 * 1000);
+  }, 60000);
 
-  // 💬 Multi-message chat
+  // Chat multiple messages every minute (with 3s delay between)
   if (Array.isArray(config.chatMessages)) {
     setInterval(() => {
       config.chatMessages.forEach((msg, index) => {
@@ -122,17 +121,16 @@ bot.once('spawn', () => {
           log(`[Chat] ${msg}`);
         }, index * 3000);
       });
-    }, 60 * 1000);
+    }, 60000);
   }
 });
 
-// 🧠 Log error
 bot.on('error', err => log(`[Error] ${err.message}`));
 bot.on('end', () => log(`[Info] Bot disconnected.`));
 
-// 🔁 Auto-reconnect
+// Auto-reconnect on disconnect
 bot.on('end', () => {
-  log(`[Reconnect] Attempting to restart bot in 10 seconds...`);
+  log('[Reconnect] Attempting to restart bot in 10 seconds...');
   setTimeout(() => {
     require('child_process').spawn(process.argv[0], process.argv.slice(1), {
       stdio: 'inherit'
@@ -140,10 +138,10 @@ bot.on('end', () => {
   }, 10000);
 });
 
-// 📝 Logger
+// Logger function
 function log(message) {
   const timestamp = new Date().toISOString();
   const fullMessage = `[${timestamp}] ${message}`;
   console.log(fullMessage);
   fs.appendFileSync('logs.txt', fullMessage + '\n');
-    }
+}
