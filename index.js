@@ -21,6 +21,15 @@ function log(msg) {
   fs.appendFileSync('logs.txt', message + '\n');
 }
 
+// Listen to low-level client errors to avoid uncaught exceptions
+bot._client.on('error', err => {
+  log(`[Client Error] ${err.message}`);
+});
+
+bot._client.on('close', () => {
+  log(`[Client] Connection closed.`);
+});
+
 // Auto register/login
 bot.on('message', (jsonMsg) => {
   const message = jsonMsg.toString().toLowerCase();
@@ -143,10 +152,10 @@ bot.once('spawn', () => {
   }
 });
 
-// Reconnect on crash
+// Reconnect on crash or disconnect
 bot.on('error', err => log(`[Error] ${err.message}`));
 bot.on('end', () => {
-  log(`[Disconnected] Bot disconnected. Reconnecting...`);
+  log(`[Disconnected] Bot disconnected. Reconnecting in 10 seconds...`);
   setTimeout(() => {
     require('child_process').spawn(process.argv[0], process.argv.slice(1), {
       stdio: 'inherit'
