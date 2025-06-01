@@ -1,5 +1,6 @@
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals: { GoalBlock } } = require('mineflayer-pathfinder');
+const Vec3 = require('vec3');
 const fs = require('fs');
 const config = require('./config.json');
 
@@ -23,6 +24,21 @@ bot.once('spawn', () => {
   const radius = 3;
   let angle = 0;
 
+  // 🔒 Block breaking protection
+  bot.on('diggingCompleted', (block) => {
+    log(`[Block] Prevented breaking block at ${block.position}`);
+    bot.stopDigging();
+  });
+
+  bot.on('diggingAborted', (block) => {
+    log(`[Block] Digging aborted at ${block.position}`);
+  });
+
+  bot.dig = async function () {
+    log(`[Block] Digging prevented by override.`);
+    return;
+  };
+
   // ⛨ Auto login/register
   bot.on('message', (jsonMsg) => {
     const message = jsonMsg.toString().toLowerCase();
@@ -38,7 +54,8 @@ bot.once('spawn', () => {
   // 🌙 Sleep at night
   bot.on('time', () => {
     if (bot.time.timeOfDay >= 13000 && bot.time.timeOfDay <= 23999 && !bot.isSleeping) {
-      const bedBlock = bot.blockAt({ x: bedPos.x, y: bedPos.y, z: bedPos.z });
+      const bedVec = new Vec3(bedPos.x, bedPos.y, bedPos.z);
+      const bedBlock = bot.blockAt(bedVec);
       if (bedBlock && bot.isABed(bedBlock)) {
         bot.sleep(bedBlock).then(() => {
           log(`[Sleep] Sleeping in bed.`);
@@ -127,4 +144,4 @@ function log(msg) {
   const time = new Date().toISOString();
   console.log(`[${time}] ${msg}`);
   fs.appendFileSync('logs.txt', `[${time}] ${msg}\n`);
-                                   }
+}
