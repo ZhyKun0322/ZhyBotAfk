@@ -16,9 +16,7 @@ bot.loadPlugin(pathfinder);
 bot.once('spawn', () => {
   const mcData = require('minecraft-data')(bot.version);
   const defaultMove = new Movements(bot, mcData);
-
-  // ✅ Force walking, never run
-  defaultMove.allowSprinting = false;
+  defaultMove.allow1by1towers = false;
   bot.pathfinder.setMovements(defaultMove);
 
   const password = config.loginCode;
@@ -53,11 +51,20 @@ bot.once('spawn', () => {
     }
   });
 
-  // 🌙 Sleep at night (auto-detect nearest bed)
+  // 🌙 Sleep at night (safe bed search)
   bot.on('time', () => {
-    if (bot.time.timeOfDay >= 13000 && bot.time.timeOfDay <= 23999 && !bot.isSleeping) {
+    if (
+      bot.time.timeOfDay >= 13000 &&
+      bot.time.timeOfDay <= 23999 &&
+      !bot.isSleeping &&
+      bot.entity?.position
+    ) {
       const bedPositions = bot.findBlocks({
-        matching: block => bot.isABed(block),
+        matching: block => {
+          if (!block) return false;
+          const dist = block.position.distanceTo(bot.entity.position);
+          return bot.isABed(block) && dist <= 10;
+        },
         maxDistance: 10,
         count: 1
       });
@@ -91,17 +98,18 @@ bot.once('spawn', () => {
     }
   }, 5000);
 
-  // 🚶 Circular walk
+  // 🚶 Walk in circle (walking only, not running)
   function walkInCircle() {
     const x = center.x + Math.cos(angle) * radius;
     const z = center.z + Math.sin(angle) * radius;
     const y = center.y;
 
     const goal = new GoalBlock(Math.round(x), Math.round(y), Math.round(z));
+    bot.setControlState('sprint', false); // 👣 No running
     bot.pathfinder.setGoal(goal);
     log(`[Move] Walking to (${goal.x}, ${goal.y}, ${goal.z})`);
 
-    angle += Math.PI / 3;
+    angle += Math.PI / 3; // 60° step
     if (angle >= 2 * Math.PI) angle = 0;
 
     setTimeout(walkInCircle, 7000);
@@ -117,7 +125,7 @@ bot.once('spawn', () => {
     }
   }, 5000);
 
-  // 💬 Single chat message
+  // 💬 Single message
   setInterval(() => {
     const msg = config.chatMessage || "I'm still active!";
     bot.chat(msg);
@@ -135,40 +143,21 @@ bot.once('spawn', () => {
       });
     }, 60000);
   }
+});
 
-  // 🚪 Auto open and close nearby wooden doors
-  let lastDoorOpened = null;
-  bot.on('physicTick', () => {
-    const doorBlock = bot.findBlock({
-      matching: block =>
-        block.name.includes('door') &&
-        !block.name.includes('iron') &&
-        bot.entity.position.distanceTo(block.position) < 2,
-      maxDistance: 2
-    });
-
-    if (doorBlock && doorBlock !== lastDoorOpened) {
-      const isOpen = doorBlock.metadata & 0x4;
-      if (!isOpen) {
-        bot.activateBlock(doorBlock).then(() => {
-          log(`[Door] Opened door at ${doorBlock.position}`);
-          lastDoorOpened = doorBlock;
-
-          setTimeout(() => {
-            const currentState = bot.blockAt(doorBlock.position);
-            if (currentState && (currentState.metadata & 0x4)) {
-              bot.activateBlock(currentState).then(() => {
-                log(`[Door] Closed door at ${doorBlock.position}`);
-              }).catch(() => {});
-            }
-            lastDoorOpened = null;
-          }, 2000); // close after 2 seconds
-        }).catch(err => {
-          log(`[Door] Failed to open: ${err.message}`);
-        });
-      }
-    }
+// 🚪 Door opening logic
+bot.on('path_update', (r) => {
+  if (r.status === 'noPath') return;
+  const door = bot.findBlock({
+    matching: block => block.name.includes('door'),
+    maxDistance: 3
   });
+
+  if (door) {
+    bot.activateBlock(door).then(() => {
+      log(`[Door] Opened door at ${door.position}`);
+    }).catch(() => {});
+  }
 });
 
 // 🛑 Handle disconnect and reconnect
@@ -187,4 +176,4 @@ function log(msg) {
   const time = new Date().toISOString();
   console.log(`[${time}] ${msg}`);
   fs.appendFileSync('logs.txt', `[${time}] ${msg}\n`);
-}
+      }
