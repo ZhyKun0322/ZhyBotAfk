@@ -30,6 +30,11 @@ bot._client.on('close', () => {
   log(`[Client] Connection closed.`);
 });
 
+// Catch socket errors (like ECONNRESET)
+bot._client._socket.on('error', err => {
+  log(`[Socket Error] ${err.message}`);
+});
+
 // Auto register/login
 bot.on('message', (jsonMsg) => {
   const message = jsonMsg.toString().toLowerCase();
@@ -93,24 +98,25 @@ bot.once('spawn', () => {
     bot.stopDigging();
   });
 
-  // Auto sleep at night
-  bot.on('time', () => {
-    if (bot.time.timeOfDay >= 13000 && bot.time.timeOfDay <= 23999 && !bot.isSleeping) {
-      const bedPos = bot.findBlock({
+  // Auto sleep at night (polling every 5 seconds)
+  setInterval(() => {
+    if (bot.isSleeping) return;
+
+    const time = bot.time.timeOfDay;
+    if (time >= 13000 && time <= 23000) {
+      const bedBlock = bot.findBlock({
         matching: block => bot.isABed(block),
         maxDistance: 10
       });
-
-      if (bedPos) {
-        const bedBlock = bot.blockAt(bedPos.position || bedPos);
-        bot.sleep(bedBlock)
+      if (bedBlock) {
+        bot.sleep(bedBlock.position)
           .then(() => log(`[Sleep] Sleeping at ${bedBlock.position}`))
-          .catch(err => log(`[Sleep] Failed: ${err.message}`));
+          .catch(err => log(`[Sleep] Failed to sleep: ${err.message}`));
       } else {
         log(`[Sleep] No bed found nearby.`);
       }
     }
-  });
+  }, 5000);
 
   // Auto eat when hungry
   setInterval(() => {
