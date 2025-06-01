@@ -34,39 +34,35 @@ bot.once('spawn', () => {
     }
   });
 
-  // 🚶 Walk + Look
-  function walkAndLook() {
-    const pos = bot.entity.position;
-    const x = pos.x + Math.floor(Math.random() * 20 - 10);
-    const y = pos.y;
-    const z = pos.z + Math.floor(Math.random() * 20 - 10);
+  // 🌙 Sleep at night
+  const bedPos = bot.entity.position.clone(); // Assume bed is placed here
+  bot.on('time', () => {
+    if (bot.time.isNight() && !bot.isSleeping && bot.entity.onGround) {
+      const bedBlock = bot.blockAt(bedPos);
+      if (bedBlock && bot.isABed(bedBlock)) {
+        bot.sleep(bedBlock).then(() => {
+          log(`[Sleep] Bot is sleeping.`);
+        }).catch(err => {
+          log(`[Sleep] Failed to sleep: ${err.message}`);
+        });
+      }
+    }
+  });
+
+  // 🔁 Circular movement every 1 minute
+  const center = bot.entity.position.clone();
+  let angle = 0;
+  setInterval(() => {
+    const radius = 5;
+    angle += Math.PI / 4; // 45 degrees step
+    const x = center.x + radius * Math.cos(angle);
+    const z = center.z + radius * Math.sin(angle);
+    const y = center.y;
+
     const goal = new GoalBlock(Math.floor(x), Math.floor(y), Math.floor(z));
-
     bot.pathfinder.setGoal(goal);
-    log(`[Move] Walking to ${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}`);
-
-    const stopAfter = 6000;
-    setTimeout(() => {
-      bot.pathfinder.setGoal(null); // Stop walking
-      log(`[Move] Stopped to look around.`);
-
-      const yaw = bot.entity.yaw;
-
-      // Look left
-      bot.look(yaw - Math.PI / 2, 0, true, () => {
-        setTimeout(() => {
-          // Look right
-          bot.look(yaw + Math.PI / 2, 0, true, () => {
-            setTimeout(() => {
-              walkAndLook(); // Repeat cycle
-            }, 1000);
-          });
-        }, 2000);
-      });
-    }, stopAfter);
-  }
-
-  walkAndLook();
+    log(`[Move] Walking in circle to ${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}`);
+  }, 60 * 1000);
 
   // ⬆️ Jump every 5 seconds
   setInterval(() => {
