@@ -1,5 +1,5 @@
 // 📁 mineflayer-bot-template/index.js
-// ✅ Bot walks, stops, looks around, jumps, chats, and handles LoginSecurity
+// ✅ Bot walks, stops, looks around, jumps, chats, and handles LoginSecurity smarter
 
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals: { GoalBlock } } = require('mineflayer-pathfinder');
@@ -20,18 +20,23 @@ bot.once('spawn', () => {
   const defaultMove = new Movements(bot, mcData);
   bot.pathfinder.setMovements(defaultMove);
 
-  // ⛨ Handle LoginSecurity (register + login)
-  setTimeout(() => {
-    const password = config.loginCode;
+  const password = config.loginCode;
 
-    bot.chat(`/register ${password} ${password}`);
-    log(`[LoginSecurity] Sent register command`);
+  // ⛨ Handle LoginSecurity smarter (register or login depending on server messages)
+  bot.on('message', (jsonMsg) => {
+    const message = jsonMsg.toString().toLowerCase();
 
-    setTimeout(() => {
+    // Debug print to tune strings if needed
+    // console.log('Server message:', message);
+
+    if (message.includes('register') || message.includes('not registered')) {
+      bot.chat(`/register ${password} ${password}`);
+      log(`[LoginSecurity] Sent register command`);
+    } else if (message.includes('login') || message.includes('logged out')) {
       bot.chat(`/login ${password}`);
       log(`[LoginSecurity] Sent login command`);
-    }, 3000);
-  }, 5000);
+    }
+  });
 
   // 🚶 Walk + Look
   function walkAndLook() {
