@@ -16,7 +16,6 @@ bot.loadPlugin(pathfinder);
 bot.once('spawn', () => {
   const mcData = require('minecraft-data')(bot.version);
   const defaultMove = new Movements(bot, mcData);
-  defaultMove.allow1by1towers = false;
   bot.pathfinder.setMovements(defaultMove);
 
   const password = config.loginCode;
@@ -43,28 +42,19 @@ bot.once('spawn', () => {
   bot.on('message', (jsonMsg) => {
     const message = jsonMsg.toString().toLowerCase();
     if (message.includes('register') || message.includes('not registered')) {
-      bot.chat(`/register ${password} ${password}`);
+      bot.chat(`/register ${password} ${password}`).catch(err => log(`[LoginSecurity] Chat error: ${err.message}`));
       log(`[LoginSecurity] Registered.`);
     } else if (message.includes('login') || message.includes('logged out')) {
-      bot.chat(`/login ${password}`);
+      bot.chat(`/login ${password}`).catch(err => log(`[LoginSecurity] Chat error: ${err.message}`));
       log(`[LoginSecurity] Logged in.`);
     }
   });
 
-  // 🌙 Sleep at night (safe bed search)
+  // 🌙 Sleep at night (auto-detect nearest bed)
   bot.on('time', () => {
-    if (
-      bot.time.timeOfDay >= 13000 &&
-      bot.time.timeOfDay <= 23999 &&
-      !bot.isSleeping &&
-      bot.entity?.position
-    ) {
+    if (bot.time.timeOfDay >= 13000 && bot.time.timeOfDay <= 23999 && !bot.isSleeping) {
       const bedPositions = bot.findBlocks({
-        matching: block => {
-          if (!block) return false;
-          const dist = block.position.distanceTo(bot.entity.position);
-          return bot.isABed(block) && dist <= 10;
-        },
+        matching: block => bot.isABed(block),
         maxDistance: 10,
         count: 1
       });
@@ -98,26 +88,43 @@ bot.once('spawn', () => {
     }
   }, 5000);
 
-  // 🚶 Walk in circle (walking only, not running)
+  // 🚶 Circular walk
   function walkInCircle() {
     const x = center.x + Math.cos(angle) * radius;
     const z = center.z + Math.sin(angle) * radius;
     const y = center.y;
 
     const goal = new GoalBlock(Math.round(x), Math.round(y), Math.round(z));
-    bot.setControlState('sprint', false); // 👣 No running
     bot.pathfinder.setGoal(goal);
-    log(`[Move] Walking to (${goal.x}, ${goal.y}, ${goal.z})`);
+    log(`[Move] Moving to (${goal.x}, ${goal.y}, ${goal.z})`);
 
     angle += Math.PI / 3; // 60° step
     if (angle >= 2 * Math.PI) angle = 0;
 
-    setTimeout(walkInCircle, 7000);
+    setTimeout(walkInCircle, 7000); // walk every 7 seconds
   }
 
   walkInCircle();
 
-  // ⬆️ Jump every 5s
+  // 🚪 Open doors near the bot on path updates
+  bot.on('path_update', (r) => {
+    if (r.status === 'noPath') return;
+
+    const door = bot.findBlock({
+      matching: block => block.name.includes('door'),
+      maxDistance: 3
+    });
+
+    if (door) {
+      bot.activateBlock(door).then(() => {
+        log(`[Door] Opened door at ${door.position}`);
+      }).catch(err => {
+        log(`[Door] Failed to open door: ${err.message}`);
+      });
+    }
+  });
+
+  // ⬆️ Jump every 5s (optional)
   setInterval(() => {
     if (bot.entity.onGround) {
       bot.setControlState('jump', true);
@@ -125,10 +132,10 @@ bot.once('spawn', () => {
     }
   }, 5000);
 
-  // 💬 Single message
+  // 💬 Single chat message
   setInterval(() => {
     const msg = config.chatMessage || "I'm still active!";
-    bot.chat(msg);
+    bot.chat(msg).catch(err => log(`[Chat] Failed to send message: ${err.message}`));
     log(`[Chat] ${msg}`);
   }, 60000);
 
@@ -137,26 +144,11 @@ bot.once('spawn', () => {
     setInterval(() => {
       config.chatMessages.forEach((msg, i) => {
         setTimeout(() => {
-          bot.chat(msg);
+          bot.chat(msg).catch(err => log(`[Chat] Failed: ${err.message}`));
           log(`[Chat] ${msg}`);
         }, i * 3000);
       });
     }, 60000);
-  }
-});
-
-// 🚪 Door opening logic
-bot.on('path_update', (r) => {
-  if (r.status === 'noPath') return;
-  const door = bot.findBlock({
-    matching: block => block.name.includes('door'),
-    maxDistance: 3
-  });
-
-  if (door) {
-    bot.activateBlock(door).then(() => {
-      log(`[Door] Opened door at ${door.position}`);
-    }).catch(() => {});
   }
 });
 
@@ -176,4 +168,4 @@ function log(msg) {
   const time = new Date().toISOString();
   console.log(`[${time}] ${msg}`);
   fs.appendFileSync('logs.txt', `[${time}] ${msg}\n`);
-      }
+    }
