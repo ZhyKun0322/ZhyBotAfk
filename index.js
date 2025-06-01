@@ -49,37 +49,39 @@ bot.once('spawn', () => {
   const defaultMove = new Movements(bot, mcData);
   bot.pathfinder.setMovements(defaultMove);
 
-  // House center and size for walking
+  // House center and size for roaming
   const houseCenter = new Vec3(-1244, 72, -448);
   const houseSize = 11; // 11x11 blocks
 
-  // Calculate corners of the house perimeter to walk around
-  const points = [
-    new Vec3(houseCenter.x - Math.floor(houseSize / 2), houseCenter.y, houseCenter.z - Math.floor(houseSize / 2)),
-    new Vec3(houseCenter.x + Math.floor(houseSize / 2), houseCenter.y, houseCenter.z - Math.floor(houseSize / 2)),
-    new Vec3(houseCenter.x + Math.floor(houseSize / 2), houseCenter.y, houseCenter.z + Math.floor(houseSize / 2)),
-    new Vec3(houseCenter.x - Math.floor(houseSize / 2), houseCenter.y, houseCenter.z + Math.floor(houseSize / 2)),
-  ];
+  // Function to get a random point inside the house boundary
+  function getRandomPoint() {
+    const half = Math.floor(houseSize / 2);
+    const x = houseCenter.x - half + Math.floor(Math.random() * houseSize);
+    const z = houseCenter.z - half + Math.floor(Math.random() * houseSize);
+    return new Vec3(x, houseCenter.y, z);
+  }
 
-  let currentPoint = 0;
-
-  function walkAroundHouse() {
-    const goal = new GoalBlock(points[currentPoint].x, points[currentPoint].y, points[currentPoint].z);
+  // Roam randomly inside the house
+  function roamInsideHouse() {
+    const target = getRandomPoint();
+    const goal = new GoalBlock(target.x, target.y, target.z);
     bot.pathfinder.setGoal(goal);
-    log(`[Move] Walking to house corner ${currentPoint + 1}: (${goal.x}, ${goal.y}, ${goal.z})`);
+    log(`[Move] Roaming to (${goal.x}, ${goal.y}, ${goal.z})`);
+
+    // Walk instead of sprint
+    bot.setControlState('sprint', false);
 
     const onGoalReached = () => {
-      log(`[Move] Reached house corner ${currentPoint + 1}`);
-      currentPoint = (currentPoint + 1) % points.length;
+      log(`[Move] Reached (${goal.x}, ${goal.y}, ${goal.z}), roaming again soon...`);
       bot.pathfinder.setGoal(null);
-      setTimeout(walkAroundHouse, 3000);
+      setTimeout(roamInsideHouse, 3000); // wait 3 seconds before next roam
       bot.removeListener('goal_reached', onGoalReached);
     };
 
     bot.once('goal_reached', onGoalReached);
   }
 
-  walkAroundHouse();
+  roamInsideHouse();
 
   // Prevent block breaking
   bot.dig = async () => {
