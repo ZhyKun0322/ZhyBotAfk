@@ -1,1 +1,7 @@
-
+{
+  "host": "KingdomOfYggdrasil.aternos.me",
+  "port": 52364,
+  "username": "ZhyBot",
+  "version": false,
+  "chatMessage": "I'm still active!"
+}
