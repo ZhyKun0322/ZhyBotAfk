@@ -1,93 +1,81 @@
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals: { GoalBlock } } = require('mineflayer-pathfinder');
 const fs = require('fs');
-const Vec3 = require('vec3');
 const config = require('./config.json');
 
-// 📝 Logger
-function log(msg) {
-  const time = new Date().toISOString();
-  console.log(`[${time}] ${msg}`);
-  fs.appendFileSync('logs.txt', `[${time}] ${msg}\n`);
-}
-
-// 🔌 Create bot
 const bot = mineflayer.createBot({
   host: config.host,
   port: config.port,
   username: config.username,
-  version: config.version || false,
+  version: config.version || false
 });
 
 bot.loadPlugin(pathfinder);
 
-// 🔒 Auto login/register (listen early)
-bot.on('message', (jsonMsg) => {
-  const message = jsonMsg.toString().toLowerCase();
+// 📝 Logger
+function log(msg) {
+  const time = new Date().toISOString();
+  const logMsg = `[${time}] ${msg}`;
+  console.log(logMsg);
+  fs.appendFileSync('logs.txt', logMsg + '\n');
+}
+
+// 🔒 Auto login/register handler (OUTSIDE spawn!)
+bot.on('messagestr', (message) => {
+  const lower = message.toLowerCase();
   const password = config.loginCode;
 
-  if (message.includes('register') || message.includes('not registered') || message.includes('/register')) {
-    setTimeout(() => {
-      bot.chat(`/register ${password} ${password}`);
-      log(`[LoginSecurity] Registered.`);
-    }, 1000);
-  } else if (message.includes('login') || message.includes('logged out') || message.includes('/login')) {
-    setTimeout(() => {
-      bot.chat(`/login ${password}`);
-      log(`[LoginSecurity] Logged in.`);
-    }, 1000);
+  if (lower.includes('register') || lower.includes('not registered')) {
+    bot.chat(`/register ${password} ${password}`);
+    log(`[Login] Registered with password.`);
+  } else if (lower.includes('login') || lower.includes('logged out')) {
+    bot.chat(`/login ${password}`);
+    log(`[Login] Sent login.`);
   }
 });
 
+// 🤖 Main bot logic
 bot.once('spawn', () => {
+  log(`[Bot] Spawned in the world.`);
+
   const mcData = require('minecraft-data')(bot.version);
   const movements = new Movements(bot, mcData);
-  movements.allowSprinting = false;
+  movements.allowSprinting = false; // Walk only
   bot.pathfinder.setMovements(movements);
 
   const center = config.walkCenter;
   const radius = 3;
   let angle = 0;
 
-  // 🚫 Prevent digging
-  bot.on('diggingCompleted', (block) => {
-    log(`[Block] Prevented breaking block at ${block.position}`);
-    bot.stopDigging();
-  });
+  // 🚶 Walk in circle
+  function walkInCircle() {
+    const x = center.x + Math.cos(angle) * radius;
+    const z = center.z + Math.sin(angle) * radius;
+    const y = center.y;
 
-  bot.on('diggingAborted', (block) => {
-    log(`[Block] Digging aborted at ${block.position}`);
-  });
+    const goal = new GoalBlock(Math.round(x), Math.round(y), Math.round(z));
+    bot.pathfinder.setGoal(goal);
+    log(`[Move] Going to (${goal.x}, ${goal.y}, ${goal.z})`);
 
-  bot.dig = async function () {
-    log(`[Block] Digging prevented by override.`);
-    return;
-  };
+    angle += Math.PI / 3;
+    if (angle >= 2 * Math.PI) angle = 0;
 
-  // 🚪 Open doors
-  bot.on('goal_reached', () => {
-    const door = bot.findBlock({
-      matching: block => block.name.includes('door'),
-      maxDistance: 2
-    });
-    if (door) {
-      const doorBlock = bot.blockAt(door.position);
-      bot.activateBlock(doorBlock);
-      log(`[Door] Opened door at ${door.position}`);
-    }
-  });
+    setTimeout(walkInCircle, 7000);
+  }
 
-  // 🛏️ Sleep at night
+  walkInCircle();
+
+  // 🌙 Sleep at night
   bot.on('time', () => {
     if (bot.time.timeOfDay >= 13000 && bot.time.timeOfDay <= 23999 && !bot.isSleeping) {
-      const bed = bot.findBlock({
+      const bedBlock = bot.findBlock({
         matching: block => bot.isABed(block),
         maxDistance: 10
       });
 
-      if (bed) {
-        bot.sleep(bot.blockAt(bed))
-          .then(() => log(`[Sleep] Sleeping in bed at ${bed.position}`))
+      if (bedBlock) {
+        bot.sleep(bedBlock)
+          .then(() => log(`[Sleep] Sleeping in bed at ${bedBlock.position}`))
           .catch(err => log(`[Sleep] Failed: ${err.message}`));
       } else {
         log(`[Sleep] No nearby bed found.`);
@@ -98,52 +86,27 @@ bot.once('spawn', () => {
   // 🍗 Eat food when hungry
   setInterval(() => {
     if (bot.food < 18) {
-      const food = bot.inventory.items().find(item =>
+      const foodItem = bot.inventory.items().find(item =>
         item.name.includes('bread') || item.name.includes('cooked') || item.name.includes('apple')
       );
-      if (food) {
-        bot.equip(food, 'hand')
+
+      if (foodItem) {
+        bot.equip(foodItem, 'hand')
           .then(() => bot.consume())
-          .then(() => log(`[Eat] Ate ${food.name}`))
+          .then(() => log(`[Eat] Ate ${foodItem.name}`))
           .catch(err => log(`[Eat] Failed: ${err.message}`));
       }
     }
   }, 5000);
 
-  // 🔁 Circular walk
-  function walkInCircle() {
-    const x = center.x + Math.cos(angle) * radius;
-    const z = center.z + Math.sin(angle) * radius;
-    const y = center.y;
-
-    const goal = new GoalBlock(Math.round(x), Math.round(y), Math.round(z));
-    bot.pathfinder.setGoal(goal);
-    log(`[Move] Walking to (${goal.x}, ${goal.y}, ${goal.z})`);
-
-    angle += Math.PI / 3;
-    if (angle >= 2 * Math.PI) angle = 0;
-
-    setTimeout(walkInCircle, 7000);
-  }
-
-  walkInCircle();
-
-  // ⬆️ Jump every 5 seconds
-  setInterval(() => {
-    if (bot.entity.onGround) {
-      bot.setControlState('jump', true);
-      setTimeout(() => bot.setControlState('jump', false), 500);
-    }
-  }, 5000);
-
-  // 💬 Static chat message
+  // 💬 Static chat message every 1 min
   setInterval(() => {
     const msg = config.chatMessage || "I'm still active!";
     bot.chat(msg);
     log(`[Chat] ${msg}`);
   }, 60000);
 
-  // 💬 Multi-message loop
+  // 💬 Multi-message chat
   if (Array.isArray(config.chatMessages)) {
     setInterval(() => {
       config.chatMessages.forEach((msg, i) => {
@@ -154,10 +117,32 @@ bot.once('spawn', () => {
       });
     }, 60000);
   }
+
+  // ⛏️ Block protection
+  bot.on('diggingCompleted', block => {
+    log(`[Block] Prevented breaking block at ${block.position}`);
+    bot.stopDigging();
+  });
+
+  bot.on('diggingAborted', block => {
+    log(`[Block] Digging aborted at ${block.position}`);
+  });
+
+  bot.dig = async function () {
+    log(`[Block] Digging prevented by override.`);
+    return;
+  };
+
+  // ⬆️ Jump every 5s
+  setInterval(() => {
+    if (bot.entity?.onGround) {
+      bot.setControlState('jump', true);
+      setTimeout(() => bot.setControlState('jump', false), 500);
+    }
+  }, 5000);
 });
 
-// 🔁 Reconnect on error or disconnect
-bot.on('error', err => log(`[Error] ${err.message}`));
+// 🔁 Auto reconnect on disconnect
 bot.on('end', () => {
   log(`[Disconnected] Bot disconnected. Reconnecting...`);
   setTimeout(() => {
@@ -165,4 +150,8 @@ bot.on('end', () => {
       stdio: 'inherit'
     });
   }, 10000);
+});
+
+bot.on('error', err => {
+  log(`[Error] ${err.message}`);
 });
