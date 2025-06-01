@@ -3,6 +3,11 @@
   "port": 52364,
   "username": "ZhyBotAfk",
   "version": false,
-  "chatMessage": "I'm still active!",
-  "loginCode": "ZhyBotAfk22"
+  "loginCode": "ZhyBotAfk22",
+  "chatMessages": [
+    "I'm still active",
+    "I'm created by zhykun!",
+    "Subscribe to ZhyKun on YouTube!",
+    "Follow ZhyKun on Tiktok!"
+  ]
 }
