@@ -3,14 +3,16 @@
   "port": 52364,
   "username": "ZhyBotAfk",
   "version": false,
-  "loginCode": "ZhyBotAfk22",
+  "loginCode": "ZhyBot22",
+  "walkCenter": {
+    "x": -1244,
+    "y": 72,
+    "z": -448
+  },
+  "chatMessage": "I'm still active!",
   "chatMessages": [
-    "I was created by zhykun!",
-    "Subscribe to ZhyKun on YouTube!",
-    "Follow ZhyKun on Tiktok!"
-  ],
-"walkCenter": {
-  "x": -1244,
-  "y": 72,
-  "z": -448
+    "Hi there!",
+    "I'm ZhyKun's bot.",
+    "Just roaming around!"
+  ]
 }
