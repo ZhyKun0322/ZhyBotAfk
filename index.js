@@ -1,4 +1,4 @@
-// 📁 mineflayer-bot-template/index.js // ✅ Bot walks, stops, looks around, jumps, chats, and handles LoginSecurity smarter
+// 📁 mineflayer-bot-template/index.js
 
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals: { GoalBlock } } = require('mineflayer-pathfinder');
@@ -21,10 +21,9 @@ bot.once('spawn', () => {
 
   const password = config.loginCode;
 
-  // ⛨ Handle LoginSecurity smarter (register or login depending on server messages)
+  // ⛨ Handle LoginSecurity smarter
   bot.on('message', (jsonMsg) => {
     const message = jsonMsg.toString().toLowerCase();
-
     if (message.includes('register') || message.includes('not registered')) {
       bot.chat(`/register ${password} ${password}`);
       log(`[LoginSecurity] Sent register command`);
@@ -34,36 +33,61 @@ bot.once('spawn', () => {
     }
   });
 
-  // 🚶 Walk + Look
+  // 🌙 Sleep at night using bed position from config
+  const bedPos = config.bedPosition;
+  bot.on('time', () => {
+    if (bot.time.isNight() && !bot.isSleeping && bot.entity.onGround) {
+      const bedBlock = bot.blockAt(bedPos);
+      if (bedBlock && bot.isABed(bedBlock)) {
+        bot.sleep(bedBlock).then(() => {
+          log(`[Sleep] Bot is sleeping at bed.`);
+        }).catch(err => {
+          log(`[Sleep] Failed to sleep: ${err.message}`);
+        });
+      }
+    }
+  });
+
+  // 🍗 Eat when hungry
+  setInterval(() => {
+    if (bot.food < 18) {
+      const foodItem = bot.inventory.items().find(item =>
+        item.name.includes('bread') || item.name.includes('cooked') || item.name.includes('apple')
+      );
+      if (foodItem) {
+        bot.equip(foodItem, 'hand').then(() => {
+          bot.consume().then(() => {
+            log(`[Eat] Ate ${foodItem.name}`);
+          }).catch(err => log(`[Eat] Error: ${err.message}`));
+        }).catch(err => log(`[Equip] Error: ${err.message}`));
+      }
+    }
+  }, 5000);
+
+  // 🚶 Walk + Look around
   function walkAndLook() {
     const pos = bot.entity.position;
-    const x = pos.x + Math.floor(Math.random() * 20 - 10);
+    const x = pos.x + Math.floor(Math.random() * 10 - 5);
     const y = pos.y;
-    const z = pos.z + Math.floor(Math.random() * 20 - 10);
+    const z = pos.z + Math.floor(Math.random() * 10 - 5);
     const goal = new GoalBlock(Math.floor(x), Math.floor(y), Math.floor(z));
 
     bot.pathfinder.setGoal(goal);
     log(`[Move] Walking to ${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)}`);
 
-    const stopAfter = 6000;
     setTimeout(() => {
-      bot.pathfinder.setGoal(null); // Stop walking
+      bot.pathfinder.setGoal(null);
       log(`[Move] Stopped to look around.`);
 
       const yaw = bot.entity.yaw;
-
-      // Look left
       bot.look(yaw - Math.PI / 2, 0, true, () => {
         setTimeout(() => {
-          // Look right
           bot.look(yaw + Math.PI / 2, 0, true, () => {
-            setTimeout(() => {
-              walkAndLook(); // Repeat cycle
-            }, 1000);
+            setTimeout(() => walkAndLook(), 1000);
           });
         }, 2000);
       });
-    }, stopAfter);
+    }, 6000);
   }
 
   walkAndLook();
@@ -76,21 +100,21 @@ bot.once('spawn', () => {
     }
   }, 5000);
 
-  // 💬 Main config.chatMessage (optional fallback)
+  // 💬 Main chat message
   setInterval(() => {
     const msg = config.chatMessage || "I'm still active!";
     bot.chat(msg);
     log(`[Chat] ${msg}`);
   }, 60 * 1000);
 
-  // 💬 Multi-line chat from config.chatMessages (1 msg every 3s, every 1 min)
+  // 💬 Multi-line chat
   if (Array.isArray(config.chatMessages)) {
     setInterval(() => {
       config.chatMessages.forEach((msg, index) => {
         setTimeout(() => {
           bot.chat(msg);
           log(`[Chat] ${msg}`);
-        }, index * 3000); // 3s spacing
+        }, index * 3000);
       });
     }, 60 * 1000);
   }
