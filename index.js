@@ -3,155 +3,114 @@ const { pathfinder, Movements, goals: { GoalBlock } } = require('mineflayer-path
 const fs = require('fs');
 const config = require('./config.json');
 
-const bot = mineflayer.createBot({
-  host: config.host,
-  port: config.port,
-  username: config.username,
-  version: config.version || false
-});
+let angle = 0;
+let movementInterval;
 
-bot.loadPlugin(pathfinder);
-
-// 📝 Logger
 function log(msg) {
   const time = new Date().toISOString();
-  const logMsg = `[${time}] ${msg}`;
-  console.log(logMsg);
-  fs.appendFileSync('logs.txt', logMsg + '\n');
+  const line = `[${time}] ${msg}`;
+  console.log(line);
+  fs.appendFileSync('logs.txt', line + '\n');
 }
 
-// 🔒 Auto login/register handler (OUTSIDE spawn!)
-bot.on('messagestr', (message) => {
-  const lower = message.toLowerCase();
-  const password = config.loginCode;
+function createBot() {
+  const bot = mineflayer.createBot({
+    host: config.host,
+    port: config.port,
+    username: config.username,
+    version: config.version || false
+  });
 
-  if (lower.includes('register') || lower.includes('not registered')) {
-    bot.chat(`/register ${password} ${password}`);
-    log(`[Login] Registered with password.`);
-  } else if (lower.includes('login') || lower.includes('logged out')) {
-    bot.chat(`/login ${password}`);
-    log(`[Login] Sent login.`);
-  }
-});
+  bot.loadPlugin(pathfinder);
 
-// 🤖 Main bot logic
-bot.once('spawn', () => {
-  log(`[Bot] Spawned in the world.`);
-
-  const mcData = require('minecraft-data')(bot.version);
-  const movements = new Movements(bot, mcData);
-  movements.allowSprinting = false; // Walk only
-  bot.pathfinder.setMovements(movements);
-
-  const center = config.walkCenter;
-  const radius = 3;
-  let angle = 0;
-
-  // 🚶 Walk in circle
-  function walkInCircle() {
-    const x = center.x + Math.cos(angle) * radius;
-    const z = center.z + Math.sin(angle) * radius;
-    const y = center.y;
-
-    const goal = new GoalBlock(Math.round(x), Math.round(y), Math.round(z));
-    bot.pathfinder.setGoal(goal);
-    log(`[Move] Going to (${goal.x}, ${goal.y}, ${goal.z})`);
-
-    angle += Math.PI / 3;
-    if (angle >= 2 * Math.PI) angle = 0;
-
-    setTimeout(walkInCircle, 7000);
-  }
-
-  walkInCircle();
-
-  // 🌙 Sleep at night
-  bot.on('time', () => {
-    if (bot.time.timeOfDay >= 13000 && bot.time.timeOfDay <= 23999 && !bot.isSleeping) {
-      const bedBlock = bot.findBlock({
-        matching: block => bot.isABed(block),
-        maxDistance: 10
-      });
-
-      if (bedBlock) {
-        bot.sleep(bedBlock)
-          .then(() => log(`[Sleep] Sleeping in bed at ${bedBlock.position}`))
-          .catch(err => log(`[Sleep] Failed: ${err.message}`));
-      } else {
-        log(`[Sleep] No nearby bed found.`);
-      }
+  // 🔐 Login/Register
+  bot.on('messagestr', (message) => {
+    const lower = message.toLowerCase();
+    if (lower.includes('register') || lower.includes('not registered')) {
+      bot.chat(`/register ${config.loginCode} ${config.loginCode}`);
+      log('[Login] Sent /register');
+    } else if (lower.includes('login') || lower.includes('logged out')) {
+      bot.chat(`/login ${config.loginCode}`);
+      log('[Login] Sent /login');
     }
   });
 
-  // 🍗 Eat food when hungry
-  setInterval(() => {
-    if (bot.food < 18) {
-      const foodItem = bot.inventory.items().find(item =>
-        item.name.includes('bread') || item.name.includes('cooked') || item.name.includes('apple')
-      );
+  // ✅ Main logic
+  bot.once('spawn', () => {
+    log('[Spawn] Bot has spawned');
 
-      if (foodItem) {
-        bot.equip(foodItem, 'hand')
-          .then(() => bot.consume())
-          .then(() => log(`[Eat] Ate ${foodItem.name}`))
-          .catch(err => log(`[Eat] Failed: ${err.message}`));
-      }
+    const mcData = require('minecraft-data')(bot.version);
+    const movements = new Movements(bot, mcData);
+    movements.allowSprinting = false;
+    bot.pathfinder.setMovements(movements);
+
+    const center = config.walkCenter || { x: 0, y: 64, z: 0 };
+    const radius = 3;
+
+    function walkCircle() {
+      const x = center.x + Math.cos(angle) * radius;
+      const z = center.z + Math.sin(angle) * radius;
+      const y = center.y;
+
+      const goal = new GoalBlock(Math.round(x), Math.round(y), Math.round(z));
+      bot.pathfinder.setGoal(goal);
+      log(`[Move] Walking to (${goal.x}, ${goal.y}, ${goal.z})`);
+
+      angle += Math.PI / 3;
+      if (angle >= 2 * Math.PI) angle = 0;
     }
-  }, 5000);
 
-  // 💬 Static chat message every 1 min
-  setInterval(() => {
-    const msg = config.chatMessage || "I'm still active!";
-    bot.chat(msg);
-    log(`[Chat] ${msg}`);
-  }, 60000);
+    walkCircle();
+    movementInterval = setInterval(walkCircle, 8000);
 
-  // 💬 Multi-message chat
-  if (Array.isArray(config.chatMessages)) {
+    // 🍗 Eat food
     setInterval(() => {
-      config.chatMessages.forEach((msg, i) => {
-        setTimeout(() => {
-          bot.chat(msg);
-          log(`[Chat] ${msg}`);
-        }, i * 3000);
-      });
-    }, 60000);
-  }
+      if (bot.food < 18) {
+        const food = bot.inventory.items().find(item =>
+          item.name.includes('bread') || item.name.includes('cooked') || item.name.includes('apple')
+        );
+        if (food) {
+          bot.equip(food, 'hand')
+            .then(() => bot.consume())
+            .then(() => log(`[Eat] Ate ${food.name}`))
+            .catch(err => log(`[Eat] Failed: ${err.message}`));
+        }
+      }
+    }, 5000);
 
-  // ⛏️ Block protection
-  bot.on('diggingCompleted', block => {
-    log(`[Block] Prevented breaking block at ${block.position}`);
-    bot.stopDigging();
-  });
-
-  bot.on('diggingAborted', block => {
-    log(`[Block] Digging aborted at ${block.position}`);
-  });
-
-  bot.dig = async function () {
-    log(`[Block] Digging prevented by override.`);
-    return;
-  };
-
-  // ⬆️ Jump every 5s
-  setInterval(() => {
-    if (bot.entity?.onGround) {
-      bot.setControlState('jump', true);
-      setTimeout(() => bot.setControlState('jump', false), 500);
-    }
-  }, 5000);
-});
-
-// 🔁 Auto reconnect on disconnect
-bot.on('end', () => {
-  log(`[Disconnected] Bot disconnected. Reconnecting...`);
-  setTimeout(() => {
-    require('child_process').spawn(process.argv[0], process.argv.slice(1), {
-      stdio: 'inherit'
+    // 💤 Sleep at night
+    bot.on('time', () => {
+      if (bot.time.timeOfDay >= 13000 && bot.time.timeOfDay <= 23999 && !bot.isSleeping) {
+        const bed = bot.findBlock({ matching: b => bot.isABed(b), maxDistance: 10 });
+        if (bed) {
+          bot.sleep(bed)
+            .then(() => log(`[Sleep] Slept in bed at ${bed.position}`))
+            .catch(err => log(`[Sleep] Failed: ${err.message}`));
+        }
+      }
     });
-  }, 10000);
-});
 
-bot.on('error', err => {
-  log(`[Error] ${err.message}`);
-});
+    // 💬 Chat message every minute
+    if (config.chatMessages?.length) {
+      setInterval(() => {
+        config.chatMessages.forEach((msg, i) => {
+          setTimeout(() => {
+            bot.chat(msg);
+            log(`[Chat] ${msg}`);
+          }, i * 3000);
+        });
+      }, 60000);
+    }
+  });
+
+  // 🔁 Reconnect on disconnect
+  bot.on('end', () => {
+    log('[Bot] Disconnected. Reconnecting...');
+    if (movementInterval) clearInterval(movementInterval);
+    setTimeout(() => createBot(), 10000);
+  });
+
+  bot.on('error', err => log(`[Error] ${err.message}`));
+}
+
+createBot();
