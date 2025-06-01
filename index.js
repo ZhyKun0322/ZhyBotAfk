@@ -1,5 +1,4 @@
-// 📁 mineflayer-bot-template/index.js
-// ✅ Bot walks, stops, looks around, jumps, chats, and handles LoginSecurity smarter
+// 📁 mineflayer-bot-template/index.js // ✅ Bot walks, stops, looks around, jumps, chats, and handles LoginSecurity smarter
 
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals: { GoalBlock } } = require('mineflayer-pathfinder');
@@ -77,22 +76,24 @@ bot.once('spawn', () => {
     }
   }, 5000);
 
-  // 💬 Multi-line Chat every minute (1 msg every 3s)
-  const chatMessages = [
-    "I'm still active",
-    "I'm created by zhykun!",
-    "Subscribe to ZhyKun on YouTube!",
-    "Follow ZhyKun on Tiktok!"
-  ];
-
+  // 💬 Main config.chatMessage (optional fallback)
   setInterval(() => {
-    chatMessages.forEach((msg, index) => {
-      setTimeout(() => {
-        bot.chat(msg);
-        log(`[Chat] ${msg}`);
-      }, index * 3000); // 3s interval between messages
-    });
-  }, 60 * 1000); // Every minute
+    const msg = config.chatMessage || "I'm still active!";
+    bot.chat(msg);
+    log(`[Chat] ${msg}`);
+  }, 60 * 1000);
+
+  // 💬 Multi-line chat from config.chatMessages (1 msg every 3s, every 1 min)
+  if (Array.isArray(config.chatMessages)) {
+    setInterval(() => {
+      config.chatMessages.forEach((msg, index) => {
+        setTimeout(() => {
+          bot.chat(msg);
+          log(`[Chat] ${msg}`);
+        }, index * 3000); // 3s spacing
+      });
+    }, 60 * 1000);
+  }
 });
 
 bot.on('error', err => log(`[Error] ${err.message}`));
