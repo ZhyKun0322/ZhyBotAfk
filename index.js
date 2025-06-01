@@ -21,18 +21,12 @@ function log(msg) {
   fs.appendFileSync('logs.txt', message + '\n');
 }
 
-// Listen to low-level client errors to avoid uncaught exceptions
+// Catch client errors
 bot._client.on('error', err => {
   log(`[Client Error] ${err.message}`);
 });
-
 bot._client.on('close', () => {
   log(`[Client] Connection closed.`);
-});
-
-// Catch socket errors (like ECONNRESET)
-bot._client._socket.on('error', err => {
-  log(`[Socket Error] ${err.message}`);
 });
 
 // Auto register/login
@@ -56,9 +50,8 @@ bot.once('spawn', () => {
 
   // House center and size for roaming
   const houseCenter = new Vec3(-1244, 72, -448);
-  const houseSize = 11; // 11x11 blocks
+  const houseSize = 11;
 
-  // Function to get a random point inside the house boundary
   function getRandomPoint() {
     const half = Math.floor(houseSize / 2);
     const x = houseCenter.x - half + Math.floor(Math.random() * houseSize);
@@ -66,20 +59,17 @@ bot.once('spawn', () => {
     return new Vec3(x, houseCenter.y, z);
   }
 
-  // Roam randomly inside the house
   function roamInsideHouse() {
     const target = getRandomPoint();
     const goal = new GoalBlock(target.x, target.y, target.z);
     bot.pathfinder.setGoal(goal);
     log(`[Move] Roaming to (${goal.x}, ${goal.y}, ${goal.z})`);
-
-    // Walk instead of sprint
     bot.setControlState('sprint', false);
 
     const onGoalReached = () => {
       log(`[Move] Reached (${goal.x}, ${goal.y}, ${goal.z}), roaming again soon...`);
       bot.pathfinder.setGoal(null);
-      setTimeout(roamInsideHouse, 3000); // wait 3 seconds before next roam
+      setTimeout(roamInsideHouse, 3000);
       bot.removeListener('goal_reached', onGoalReached);
     };
 
@@ -98,10 +88,9 @@ bot.once('spawn', () => {
     bot.stopDigging();
   });
 
-  // Auto sleep at night (polling every 5 seconds)
+  // Auto sleep at night
   setInterval(() => {
     if (bot.isSleeping) return;
-
     const time = bot.time.timeOfDay;
     if (time >= 13000 && time <= 23000) {
       const bedBlock = bot.findBlock({
@@ -109,7 +98,7 @@ bot.once('spawn', () => {
         maxDistance: 10
       });
       if (bedBlock) {
-        bot.sleep(bedBlock.position)
+        bot.sleep(bedBlock)
           .then(() => log(`[Sleep] Sleeping at ${bedBlock.position}`))
           .catch(err => log(`[Sleep] Failed to sleep: ${err.message}`));
       } else {
