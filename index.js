@@ -4,6 +4,14 @@ const fs = require('fs');
 const Vec3 = require('vec3');
 const config = require('./config.json');
 
+// 📝 Logger
+function log(msg) {
+  const time = new Date().toISOString();
+  console.log(`[${time}] ${msg}`);
+  fs.appendFileSync('logs.txt', `[${time}] ${msg}\n`);
+}
+
+// 🔌 Create bot
 const bot = mineflayer.createBot({
   host: config.host,
   port: config.port,
@@ -13,36 +21,35 @@ const bot = mineflayer.createBot({
 
 bot.loadPlugin(pathfinder);
 
-function log(msg) {
-  const time = new Date().toISOString();
-  console.log(`[${time}] ${msg}`);
-  fs.appendFileSync('logs.txt', `[${time}] ${msg}\n`);
-}
+// 🔒 Auto login/register (listen early)
+bot.on('message', (jsonMsg) => {
+  const message = jsonMsg.toString().toLowerCase();
+  const password = config.loginCode;
+
+  if (message.includes('register') || message.includes('not registered') || message.includes('/register')) {
+    setTimeout(() => {
+      bot.chat(`/register ${password} ${password}`);
+      log(`[LoginSecurity] Registered.`);
+    }, 1000);
+  } else if (message.includes('login') || message.includes('logged out') || message.includes('/login')) {
+    setTimeout(() => {
+      bot.chat(`/login ${password}`);
+      log(`[LoginSecurity] Logged in.`);
+    }, 1000);
+  }
+});
 
 bot.once('spawn', () => {
   const mcData = require('minecraft-data')(bot.version);
   const movements = new Movements(bot, mcData);
-  movements.allowSprinting = false; // Walk, don't run
+  movements.allowSprinting = false;
   bot.pathfinder.setMovements(movements);
 
   const center = config.walkCenter;
   const radius = 3;
   let angle = 0;
 
-  // Auto login/register
-  bot.on('message', (jsonMsg) => {
-    const message = jsonMsg.toString().toLowerCase();
-    const password = config.loginCode;
-    if (message.includes('register') || message.includes('not registered')) {
-      bot.chat(`/register ${password} ${password}`);
-      log(`[LoginSecurity] Registered.`);
-    } else if (message.includes('login') || message.includes('logged out')) {
-      bot.chat(`/login ${password}`);
-      log(`[LoginSecurity] Logged in.`);
-    }
-  });
-
-  // Prevent digging
+  // 🚫 Prevent digging
   bot.on('diggingCompleted', (block) => {
     log(`[Block] Prevented breaking block at ${block.position}`);
     bot.stopDigging();
@@ -57,7 +64,7 @@ bot.once('spawn', () => {
     return;
   };
 
-  // Door opening
+  // 🚪 Open doors
   bot.on('goal_reached', () => {
     const door = bot.findBlock({
       matching: block => block.name.includes('door'),
@@ -70,7 +77,7 @@ bot.once('spawn', () => {
     }
   });
 
-  // Sleep when night
+  // 🛏️ Sleep at night
   bot.on('time', () => {
     if (bot.time.timeOfDay >= 13000 && bot.time.timeOfDay <= 23999 && !bot.isSleeping) {
       const bed = bot.findBlock({
@@ -80,7 +87,7 @@ bot.once('spawn', () => {
 
       if (bed) {
         bot.sleep(bot.blockAt(bed))
-          .then(() => log(`[Sleep] Sleeping in bed at ${bed}`))
+          .then(() => log(`[Sleep] Sleeping in bed at ${bed.position}`))
           .catch(err => log(`[Sleep] Failed: ${err.message}`));
       } else {
         log(`[Sleep] No nearby bed found.`);
@@ -88,7 +95,7 @@ bot.once('spawn', () => {
     }
   });
 
-  // Eat food
+  // 🍗 Eat food when hungry
   setInterval(() => {
     if (bot.food < 18) {
       const food = bot.inventory.items().find(item =>
@@ -103,7 +110,7 @@ bot.once('spawn', () => {
     }
   }, 5000);
 
-  // Circular walk
+  // 🔁 Circular walk
   function walkInCircle() {
     const x = center.x + Math.cos(angle) * radius;
     const z = center.z + Math.sin(angle) * radius;
@@ -121,7 +128,7 @@ bot.once('spawn', () => {
 
   walkInCircle();
 
-  // Jump
+  // ⬆️ Jump every 5 seconds
   setInterval(() => {
     if (bot.entity.onGround) {
       bot.setControlState('jump', true);
@@ -129,14 +136,14 @@ bot.once('spawn', () => {
     }
   }, 5000);
 
-  // Static message
+  // 💬 Static chat message
   setInterval(() => {
     const msg = config.chatMessage || "I'm still active!";
     bot.chat(msg);
     log(`[Chat] ${msg}`);
   }, 60000);
 
-  // Multi-message
+  // 💬 Multi-message loop
   if (Array.isArray(config.chatMessages)) {
     setInterval(() => {
       config.chatMessages.forEach((msg, i) => {
@@ -149,7 +156,7 @@ bot.once('spawn', () => {
   }
 });
 
-// Handle disconnect
+// 🔁 Reconnect on error or disconnect
 bot.on('error', err => log(`[Error] ${err.message}`));
 bot.on('end', () => {
   log(`[Disconnected] Bot disconnected. Reconnecting...`);
