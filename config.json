@@ -4,11 +4,10 @@
   "username": "ZhyBotAfk",
   "version": false,
   "loginCode": "ZhyBot22",
-  "walkCenter": {
-    "x": -1286,
-    "y": 73,
-    "z": -417
-  },
-  "chatMessage": "Still online!",
-  "chatMessages": ["Hello!", "I'm still here!", "Just chilling..."]
+  "walkCenter": { "x": -1286, "y": 73, "z": -417 },
+  "chatMessages": [
+    "ZhyBot reporting in!",
+    "Still alive!",
+    "Base patrol active."
+  ]
 }
