@@ -51,15 +51,38 @@ bot.once('spawn', () => {
   const houseCenter = new Vec3(-1244, 72, -448);
   const houseSize = 11;
 
-  function getRandomPoint() {
+  // NEW: Get random safe walkable point inside 3D house volume (supports multiple floors)
+  function getRandomWalkablePoint() {
     const half = Math.floor(houseSize / 2);
-    const x = houseCenter.x - half + Math.floor(Math.random() * houseSize);
-    const z = houseCenter.z - half + Math.floor(Math.random() * houseSize);
-    return new Vec3(x, houseCenter.y, z);
+    const candidates = [];
+
+    for (let x = houseCenter.x - half; x <= houseCenter.x + half; x++) {
+      for (let z = houseCenter.z - half; z <= houseCenter.z + half; z++) {
+        // Scan height from y-1 to y+5 (adjust this range if needed)
+        for (let y = houseCenter.y - 1; y <= houseCenter.y + 5; y++) {
+          const pos = new Vec3(x, y, z);
+          const blockBelow = bot.blockAt(pos.offset(0, -1, 0));
+          const blockAt = bot.blockAt(pos);
+          const blockAbove = bot.blockAt(pos.offset(0, 1, 0));
+
+          if (
+            blockBelow && blockBelow.boundingBox === 'block' && // solid block to stand on
+            blockAt && blockAt.boundingBox === 'empty' &&       // space to stand in
+            blockAbove && blockAbove.boundingBox === 'empty'    // space above head
+          ) {
+            candidates.push(pos);
+          }
+        }
+      }
+    }
+
+    if (candidates.length === 0) return houseCenter;
+    return candidates[Math.floor(Math.random() * candidates.length)];
   }
 
+  // Updated roam function using new 3D random walkable points
   function roamInsideHouse() {
-    const target = getRandomPoint();
+    const target = getRandomWalkablePoint();
     const goal = new GoalBlock(target.x, target.y, target.z);
     bot.pathfinder.setGoal(goal);
     log(`[Move] Roaming to (${goal.x}, ${goal.y}, ${goal.z})`);
