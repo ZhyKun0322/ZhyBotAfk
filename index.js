@@ -305,4 +305,33 @@ async function storeExcessItems() {
 
   try {
     await openDoorAt(config.door);
-    const chestWindow
+    const chestWindow = await bot.openContainer(chest);
+    // (You can add your code here to transfer items to chest)
+    chestWindow.close();
+  } catch (err) {
+    console.error('Error storing excess items:', err);
+  }
+}
+
+async function getItemFromChest(name, amount) {
+  const chest = bot.findBlock({ matching: block => block.name === 'chest', maxDistance: 16 });
+  if (!chest) return false;
+
+  try {
+    await openDoorAt(config.door);
+    const chestWindow = await bot.openContainer(chest);
+    const item = chestWindow.containerItems().find(i => i.name.includes(name));
+    if (!item) {
+      chestWindow.close();
+      return false;
+    }
+    await bot.transfer(item, bot.inventory, amount);
+    chestWindow.close();
+    return true;
+  } catch (err) {
+    console.error('Error getting item from chest:', err);
+    return false;
+  }
+}
+
+createBot();
