@@ -34,5 +34,10 @@
     "depth": 11
   },
 
-  "searchRange": 16
+  "searchRange": 16,
+
+  "chatAnnouncements": {
+    "enable": true,
+    "farmingMessage": "Farming now!"
+  }
 }
