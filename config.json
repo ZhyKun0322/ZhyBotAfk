@@ -2,7 +2,7 @@
   "host": "KingdomOfYggdrasil.aternos.me",
   "port": 52364,
   "username": "ZhyBot2",
-  "version": 1.19.2,
+  "version": "1.19.2",
   "loginCode": "ZhyBot22",
   "walkCenter": { "x": -1244, "y": 72, "z": -448 },
   "chatMessage": "Still alive and kicking!",
