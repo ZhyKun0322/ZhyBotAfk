@@ -12,6 +12,7 @@ let sleeping = false;
 let lastDay = -1;
 let patrolIndex = 0;
 let isEating = false;
+let alreadyLoggedIn = false; // ✅ added flag
 
 const chatAnnounceEnabled = config.chatAnnouncements?.enable ?? false;
 const farmingMessage = config.chatAnnouncements?.farmingMessage || "Farming now!";
@@ -42,12 +43,17 @@ function createBot() {
   bot.on('message', (msg) => {
     const text = msg.toString().toLowerCase();
     const password = config.password;
+
+    if (alreadyLoggedIn) return;
+
     if (text.includes('register')) {
       bot.chat(`/register ${password} ${password}`);
       log('[Login] Registered');
+      alreadyLoggedIn = true;
     } else if (text.includes('login')) {
       bot.chat(`/login ${password}`);
       log('[Login] Logged in');
+      alreadyLoggedIn = true;
     }
   });
 }
@@ -59,6 +65,7 @@ function cleanupAndReconnect() {
   sleeping = false;
   lastDay = -1;
   patrolIndex = 0;
+  alreadyLoggedIn = false; // ✅ reset flag on reconnect
   setTimeout(createBot, 5000);
 }
 
@@ -125,21 +132,25 @@ async function dailyRoutineLoop() {
 async function roamLoop() {
   if (sleeping) return;
 
-  const points = [
-    new Vec3(-1246, 72, -448),
-    new Vec3(-1244, 72, -448),
-    new Vec3(-1246, 72, -450),
-    new Vec3(-1244, 72, -450)
-  ];
+  const center = config.walkCenter;
+  const size = 3; // 6x6 area
+
+  const randomOffsetX = Math.floor(Math.random() * (size * 2 + 1)) - size;
+  const randomOffsetZ = Math.floor(Math.random() * (size * 2 + 1)) - size;
+
+  const targetX = center.x + randomOffsetX;
+  const targetZ = center.z + randomOffsetZ;
+  const targetY = center.y;
 
   try {
-    const goal = points[patrolIndex];
-    patrolIndex = (patrolIndex + 1) % points.length;
-
     await openDoorAt(config.door);
-    await bot.pathfinder.goto(new GoalBlock(goal.x, goal.y, goal.z));
+    await bot.pathfinder.goto(new GoalBlock(targetX, targetY, targetZ));
   } catch (err) {
-    console.error('Error in roamLoop:', err);
+    if (err.message?.includes("NoPath")) {
+      console.warn('⚠️ No path to goal in roamLoop. Skipping.');
+    } else {
+      console.error('Error in roamLoop:', err);
+    }
   } finally {
     setTimeout(roamLoop, 5000);
   }
