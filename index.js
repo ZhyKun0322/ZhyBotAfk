@@ -43,7 +43,7 @@ const craftingTablePos = new Vec3(-1242, 72, -450);
 const bedArea = { min: new Vec3(-1246, 72, -450), max: new Vec3(-1241, 72, -445) };
 const farmMin = new Vec3(-1233, 71, -449);
 const farmMax = new Vec3(-1216, 71, -440);
-const doorPos = new Vec3(-1245, 72, -443); // CHANGE to your actual door block
+const doorPos = new Vec3(-1247, 72, -453); // your real door
 
 // Patrol points (6x6 circle)
 const patrolPoints = [];
@@ -59,6 +59,7 @@ let patrolIndex = 0;
 bot.once('spawn', () => {
   mcData = require('minecraft-data')(bot.version);
   const defaultMove = new Movements(bot, mcData);
+  defaultMove.canDig = false; // prevent breaking blocks
   bot.pathfinder.setMovements(defaultMove);
   log(`[Bot] Spawned.`);
 
@@ -77,15 +78,36 @@ function eatWhenHungry() {
   }
 }
 
-// Open and close door safely
-async function toggleDoor() {
+// Open door if needed
+async function openDoorIfClosed() {
   const doorBlock = bot.blockAt(doorPos);
-  if (doorBlock && doorBlock.name.includes('door')) {
+  if (!doorBlock || !doorBlock.name.includes('door')) return;
+
+  const isClosed = doorBlock.metadata < 4;
+  if (isClosed) {
     try {
       await bot.activateBlock(doorBlock);
-      await bot.waitForTicks(5);
+      await bot.waitForTicks(10);
+      log(`[Door] Opened the door at ${doorPos}`);
     } catch (err) {
-      log(`[Door] Failed to toggle door: ${err.message}`);
+      log(`[Door] Failed to open: ${err.message}`);
+    }
+  }
+}
+
+// Close door if open
+async function closeDoorIfOpen() {
+  const doorBlock = bot.blockAt(doorPos);
+  if (!doorBlock || !doorBlock.name.includes('door')) return;
+
+  const isOpen = doorBlock.metadata >= 4;
+  if (isOpen) {
+    try {
+      await bot.activateBlock(doorBlock);
+      await bot.waitForTicks(10);
+      log(`[Door] Closed the door at ${doorPos}`);
+    } catch (err) {
+      log(`[Door] Failed to close: ${err.message}`);
     }
   }
 }
@@ -96,12 +118,16 @@ async function roamLoop() {
   if (time >= 13000 && time <= 23458) {
     await goToBed();
   } else {
-    await toggleDoor(); // Open door
-    const goal = patrolPoints[patrolIndex];
-    patrolIndex = (patrolIndex + 1) % patrolPoints.length;
-    await bot.pathfinder.goto(new GoalBlock(goal.x, goal.y, goal.z));
-    log(`[Patrol] Walking to ${goal}`);
-    await toggleDoor(); // Close door after exiting
+    try {
+      await openDoorIfClosed();
+      const goal = patrolPoints[patrolIndex];
+      patrolIndex = (patrolIndex + 1) % patrolPoints.length;
+      await bot.pathfinder.goto(new GoalBlock(goal.x, goal.y, goal.z));
+      log(`[Patrol] Walking to ${goal}`);
+      await closeDoorIfOpen(); // Close door after moving
+    } catch (err) {
+      log(`[Path] Failed to walk: ${err.message}`);
+    }
     setTimeout(roamLoop, 5000);
   }
 }
@@ -168,7 +194,7 @@ async function craftBread() {
   }
 }
 
-// Farm harvest/replant
+// Farm loop
 async function farmAndCraftLoop() {
   for (let x = farmMin.x; x <= farmMax.x; x++) {
     for (let z = farmMin.z; z <= farmMax.z; z++) {
