@@ -9,6 +9,9 @@ const bot = mineflayer.createBot({
   port: config.port,
   username: config.username,
   version: config.version || false,
+  // If you want to use loginCode for cracked servers, use this:
+  // auth: config.loginCode ? 'mojang' : undefined, // (or your login logic)
+  // password: config.loginCode || undefined,
 });
 
 bot.loadPlugin(pathfinder);
@@ -16,20 +19,20 @@ bot.loadPlugin(pathfinder);
 let mcData;
 let defaultMove;
 
-const houseCenter = new Vec3(-1244, 72, -448);
-const chestPos = new Vec3(-1243, 72, -450);
-const furnacePos = new Vec3(-1241, 72, -450);
-const craftingTablePos = new Vec3(-1242, 72, -450);
-const bedArea = { min: new Vec3(-1246, 72, -450), max: new Vec3(-1241, 72, -445) };
-const farmMin = new Vec3(-1233, 71, -449);
-const farmMax = new Vec3(-1216, 71, -440);
+const houseCenter = new Vec3(config.houseCenter.x, config.houseCenter.y, config.houseCenter.z);
+const chestPos = new Vec3(config.chestPos.x, config.chestPos.y, config.chestPos.z);
+const furnacePos = new Vec3(config.furnacePos.x, config.furnacePos.y, config.furnacePos.z);
+const craftingTablePos = new Vec3(config.craftingTablePos.x, config.craftingTablePos.y, config.craftingTablePos.z);
 
-const patrolPoints = [
-  houseCenter.offset(-3, 0, 0),
-  houseCenter.offset(3, 0, 0),
-  houseCenter.offset(0, 0, -3),
-  houseCenter.offset(0, 0, 3),
-];
+const bedArea = {
+  min: new Vec3(config.bedArea.min.x, config.bedArea.min.y, config.bedArea.min.z),
+  max: new Vec3(config.bedArea.max.x, config.bedArea.max.y, config.bedArea.max.z),
+};
+
+const farmMin = new Vec3(config.farmMin.x, config.farmMin.y, config.farmMin.z);
+const farmMax = new Vec3(config.farmMax.x, config.farmMax.y, config.farmMax.z);
+
+const patrolPoints = config.patrolPoints.map(p => new Vec3(p.x, p.y, p.z));
 
 let patrolIndex = 0;
 let sleeping = false;
@@ -242,4 +245,4 @@ async function smeltItemsInFurnace() {
     }
   }
   furnaceWindow.close();
-}
+                                            }
