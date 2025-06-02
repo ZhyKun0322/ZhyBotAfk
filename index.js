@@ -89,11 +89,9 @@ async function onBotReady() {
 }
 
 async function openDoorAt(pos) {
-  // Wait for chunks to load around door position
-  if (!bot.world.isLoaded(new Vec3(pos.x, pos.y, pos.z))) {
-    console.log('⏳ Waiting for chunk to load for door...');
-    await bot.waitForChunksToLoad();
-  }
+  // Removed the call to bot.world.isLoaded because it doesn't exist
+  console.log('⏳ Waiting for chunk to load for door...');
+  await bot.waitForChunksToLoad();
 
   // Try exact door block first
   let doorBlock = bot.blockAt(new Vec3(pos.x, pos.y, pos.z));
