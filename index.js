@@ -23,7 +23,6 @@ function createBot() {
 
   bot.loadPlugin(pathfinder);
 
-  // Event handlers
   bot.once('login', () => console.log('✅ Bot logged in'));
   bot.once('spawn', onBotReady);
 
@@ -39,7 +38,6 @@ function createBot() {
     cleanupAndReconnect();
   });
 
-  // Remove listeners and reconnect after 5 seconds
   function cleanupAndReconnect() {
     if (!bot) return;
     bot.removeAllListeners();
@@ -55,23 +53,26 @@ function createBot() {
     defaultMove = new Movements(bot, mcData);
     defaultMove.canDig = false;
     bot.pathfinder.setMovements(defaultMove);
+
     sleeping = false;
     lastDay = -1;
     patrolIndex = 0;
 
-    // Register physicsTick once per bot spawn
     bot.on('physicsTick', eatWhenHungry);
 
     dailyRoutineLoop();
     furnaceSmeltLoop();
   }
 
-  // Main loops
-
   async function dailyRoutineLoop() {
     if (sleeping) return;
 
     try {
+      if (!bot.time) {
+        // Time info not ready yet, retry later
+        return setTimeout(dailyRoutineLoop, 5000);
+      }
+
       const time = bot.time.timeOfDay;
       const currentDay = Math.floor(bot.time.age / 24000);
 
@@ -83,7 +84,9 @@ function createBot() {
           roamLoop();
         } else {
           await bot.pathfinder.goto(new GoalBlock(
-            config.walkCenter.x, config.walkCenter.y, config.walkCenter.z
+            config.walkCenter.x,
+            config.walkCenter.y,
+            config.walkCenter.z
           ));
           await farmCrops();
           await craftBread();
