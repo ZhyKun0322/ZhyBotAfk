@@ -51,24 +51,26 @@ bot.once('spawn', () => {
   const houseCenter = new Vec3(-1244, 72, -448);
   const houseSize = 11;
 
-  // NEW: Get random safe walkable point inside 3D house volume (supports multiple floors)
-  function getRandomWalkablePoint() {
+  // Async scan for walkable points with yielding to avoid blocking event loop
+  async function getRandomWalkablePoint() {
     const half = Math.floor(houseSize / 2);
     const candidates = [];
 
     for (let x = houseCenter.x - half; x <= houseCenter.x + half; x++) {
       for (let z = houseCenter.z - half; z <= houseCenter.z + half; z++) {
-        // Scan height from y-1 to y+5 (adjust this range if needed)
         for (let y = houseCenter.y - 1; y <= houseCenter.y + 5; y++) {
+          // Yield control every 100 candidates to prevent blocking
+          if (candidates.length > 0 && candidates.length % 100 === 0) await new Promise(r => setTimeout(r, 0));
+
           const pos = new Vec3(x, y, z);
           const blockBelow = bot.blockAt(pos.offset(0, -1, 0));
           const blockAt = bot.blockAt(pos);
           const blockAbove = bot.blockAt(pos.offset(0, 1, 0));
 
           if (
-            blockBelow && blockBelow.boundingBox === 'block' && // solid block to stand on
-            blockAt && blockAt.boundingBox === 'empty' &&       // space to stand in
-            blockAbove && blockAbove.boundingBox === 'empty'    // space above head
+            blockBelow && blockBelow.boundingBox === 'block' &&
+            blockAt && blockAt.boundingBox === 'empty' &&
+            blockAbove && blockAbove.boundingBox === 'empty'
           ) {
             candidates.push(pos);
           }
@@ -80,9 +82,8 @@ bot.once('spawn', () => {
     return candidates[Math.floor(Math.random() * candidates.length)];
   }
 
-  // Updated roam function using new 3D random walkable points
-  function roamInsideHouse() {
-    const target = getRandomWalkablePoint();
+  async function roamInsideHouse() {
+    const target = await getRandomWalkablePoint();
     const goal = new GoalBlock(target.x, target.y, target.z);
     bot.pathfinder.setGoal(goal);
     log(`[Move] Roaming to (${goal.x}, ${goal.y}, ${goal.z})`);
@@ -91,7 +92,7 @@ bot.once('spawn', () => {
     const onGoalReached = () => {
       log(`[Move] Reached (${goal.x}, ${goal.y}, ${goal.z}), roaming again soon...`);
       bot.pathfinder.setGoal(null);
-      setTimeout(roamInsideHouse, 3000);
+      setTimeout(() => roamInsideHouse(), 3000);
       bot.removeListener('goal_reached', onGoalReached);
     };
 
