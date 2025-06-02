@@ -63,7 +63,7 @@ bot.once('spawn', () => {
   bot.pathfinder.setMovements(defaultMove);
   log(`[Bot] Spawned.`);
 
-  bot.on('physicsTick', eatWhenHungry); // updated from deprecated physicTick
+  bot.on('physicsTick', eatWhenHungry);
   roamLoop();
   setInterval(farmAndCraftLoop, 30000);
 });
@@ -71,7 +71,6 @@ bot.once('spawn', () => {
 // Eat if hungry
 function eatWhenHungry() {
   if (isEating || bot.food >= 18) return;
-
   const food = bot.inventory.items().find(i => i.name.includes('bread') || i.name.includes('potato'));
   if (food) {
     isEating = true;
@@ -87,7 +86,6 @@ function eatWhenHungry() {
 async function openDoorIfClosed() {
   const doorBlock = bot.blockAt(doorPos);
   if (!doorBlock || !doorBlock.name.includes('door')) return;
-
   const isClosed = doorBlock.metadata < 4;
   if (isClosed) {
     try {
@@ -104,7 +102,6 @@ async function openDoorIfClosed() {
 async function closeDoorIfOpen() {
   const doorBlock = bot.blockAt(doorPos);
   if (!doorBlock || !doorBlock.name.includes('door')) return;
-
   const isOpen = doorBlock.metadata >= 4;
   if (isOpen) {
     try {
@@ -117,8 +114,9 @@ async function closeDoorIfOpen() {
   }
 }
 
-// Roaming and patrol
+// Patrol or sleep
 async function roamLoop() {
+  if (bot.isSleeping) return; // Skip if already sleeping
   const time = bot.time.timeOfDay;
   if (time >= 13000 && time <= 23458) {
     await goToBed();
@@ -127,7 +125,6 @@ async function roamLoop() {
       await openDoorIfClosed();
       const goal = patrolPoints[patrolIndex];
       patrolIndex = (patrolIndex + 1) % patrolPoints.length;
-
       const goalBlock = new GoalBlock(goal.x, goal.y, goal.z);
 
       await Promise.race([
@@ -144,13 +141,18 @@ async function roamLoop() {
   }
 }
 
-// Sleep at night
+// Sleep at night inside house
 async function goToBed() {
+  if (bot.isSleeping) return;
+
   const bed = bot.findBlock({
     matching: block => mcData.blocksByName.bed && block.name.includes('bed'),
     maxDistance: 6,
+    useExtraInfo: true,
+    point: houseCenter
   });
-  if (bed) {
+
+  if (bed && isInArea(bed.position, bedArea)) {
     try {
       await bot.pathfinder.goto(new GoalBlock(bed.position.x, bed.position.y, bed.position.z));
       await bot.sleep(bed);
@@ -164,9 +166,18 @@ async function goToBed() {
       setTimeout(roamLoop, 3000);
     }
   } else {
-    log('[Sleep] No bed found inside house.');
+    log('[Sleep] No valid bed inside the house.');
     setTimeout(roamLoop, 3000);
   }
+}
+
+// Helper to check if a Vec3 is inside a bounding box
+function isInArea(pos, area) {
+  return (
+    pos.x >= area.min.x && pos.x <= area.max.x &&
+    pos.y >= area.min.y && pos.y <= area.max.y &&
+    pos.z >= area.min.z && pos.z <= area.max.z
+  );
 }
 
 // Open chest and take item
@@ -213,8 +224,8 @@ async function farmAndCraftLoop() {
       const pos = new Vec3(x, 71, z);
       const soil = bot.blockAt(pos);
       const crop = bot.blockAt(pos.offset(0, 1, 0));
-
       if (!soil || !crop) continue;
+
       if (soil.name === 'farmland') {
         const age = crop?.properties?.age;
         if (age === 7) {
@@ -225,6 +236,7 @@ async function farmAndCraftLoop() {
             let item = bot.inventory.items().find(i => i.name.includes(seedName));
             if (!item) await getItem(seedName, 3);
             item = bot.inventory.items().find(i => i.name.includes(seedName));
+            if (!item) continue;
             await bot.equip(item, 'hand');
             await bot.placeBlock(soil, new Vec3(0, 1, 0));
             log(`[Farm] Replanted ${seedName} at ${pos}`);
@@ -237,4 +249,4 @@ async function farmAndCraftLoop() {
   }
 
   await craftBread();
-}
+                        }
