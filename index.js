@@ -89,7 +89,24 @@ async function onBotReady() {
 }
 
 async function openDoorAt(pos) {
-  const doorBlock = bot.blockAt(new Vec3(pos.x, pos.y, pos.z));
+  // Wait for chunks to load around door position
+  if (!bot.world.isLoaded(new Vec3(pos.x, pos.y, pos.z))) {
+    console.log('⏳ Waiting for chunk to load for door...');
+    await bot.waitForChunksToLoad();
+  }
+
+  // Try exact door block first
+  let doorBlock = bot.blockAt(new Vec3(pos.x, pos.y, pos.z));
+
+  // If not door block there, search nearby within 3 blocks radius
+  if (!doorBlock || !doorBlock.name.includes('door')) {
+    doorBlock = bot.findBlock({
+      matching: b => b.name.includes('door'),
+      maxDistance: 3,
+      point: new Vec3(pos.x, pos.y, pos.z)
+    });
+  }
+
   if (!doorBlock || !doorBlock.name.includes('door')) {
     console.log(`🚪 Door not found at (${pos.x}, ${pos.y}, ${pos.z})`);
     return;
@@ -98,7 +115,7 @@ async function openDoorAt(pos) {
   if (!doorBlock.properties.open) {
     try {
       await bot.activateBlock(doorBlock);
-      log(`Opened door at ${pos.x},${pos.y},${pos.z}`);
+      log(`Opened door at ${doorBlock.position.x},${doorBlock.position.y},${doorBlock.position.z}`);
     } catch (err) {
       console.error('Failed to open door:', err);
       return;
@@ -115,11 +132,11 @@ async function openDoorAt(pos) {
     await bot.waitForTicks(5);
   }
 
-  const doorBlockNow = bot.blockAt(new Vec3(pos.x, pos.y, pos.z));
+  const doorBlockNow = bot.blockAt(doorBlock.position);
   if (passedThrough && doorBlockNow?.properties.open) {
     try {
       await bot.activateBlock(doorBlockNow);
-      log(`Closed door at ${pos.x},${pos.y},${pos.z}`);
+      log(`Closed door at ${doorBlockNow.position.x},${doorBlockNow.position.y},${doorBlockNow.position.z}`);
     } catch (err) {
       console.error('Failed to close door:', err);
     }
@@ -288,38 +305,4 @@ async function storeExcessItems() {
 
   try {
     await openDoorAt(config.door);
-    const chestWindow = await bot.openContainer(chest);
-    const keepNames = ['bread', 'seeds', 'potato', 'carrot', 'hoe'];
-
-    for (const item of bot.inventory.items()) {
-      if (keepNames.some(name => item.name.includes(name))) continue;
-      await bot.transfer(item, chestWindow, item.count);
-    }
-    chestWindow.close();
-  } catch (err) {
-    console.error('Error storing items:', err);
-  }
-}
-
-async function getItemFromChest(name, amount) {
-  const chest = bot.findBlock({ matching: block => block.name === 'chest', maxDistance: 16 });
-  if (!chest) return false;
-
-  try {
-    await openDoorAt(config.door);
-    const chestWindow = await bot.openContainer(chest);
-    const item = chestWindow.containerItems().find(i => i.name.includes(name));
-    if (!item) {
-      chestWindow.close();
-      return false;
-    }
-    await bot.transfer(item, bot.inventory, amount);
-    chestWindow.close();
-    return true;
-  } catch (err) {
-    console.error('Error getting item from chest:', err);
-    return false;
-  }
-}
-
-createBot();
+    const chestWindow
