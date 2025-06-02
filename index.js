@@ -113,7 +113,6 @@ async function onBotReady() {
 
   bot.on('physicsTick', eatWhenHungry);
 
-  // Start the routine loop only once:
   if (!routineRunning) {
     routineRunning = true;
     dailyRoutineLoop();
@@ -139,6 +138,8 @@ async function dailyRoutineLoop() {
         await roamLoop();
       } else {
         log('Odd day: farming');
+
+        // Open door at farmMin before farming
         await openDoorAt(new Vec3(config.farmMin.x, config.farmMin.y, config.farmMin.z));
         await bot.pathfinder.goto(new GoalBlock(config.farmMin.x, config.farmMin.y, config.farmMin.z));
 
@@ -151,6 +152,7 @@ async function dailyRoutineLoop() {
 
         await storeExcessItems();
 
+        // Open door at walkCenter before roaming
         await openDoorAt(new Vec3(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z));
         await bot.pathfinder.goto(new GoalBlock(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z));
       }
@@ -222,8 +224,7 @@ async function goToBed() {
   try {
     log(`Found bed at ${bed.position.x}, ${bed.position.y}, ${bed.position.z}. Approaching...`);
 
-    // Try open door in path to bed if any
-    // Scan blocks between bot and bed for doors, open if found
+    // Try opening doors between bot and bed
     const posBot = bot.entity.position;
     const dirVec = bed.position.minus(posBot).normalize();
     for (let i = 0; i < 5; i++) {
@@ -252,8 +253,7 @@ async function goToBed() {
   }
 }
 
-// Rest of your functions farmCrops, replantCrop, craftBread, storeExcessItems, getItemFromChest unchanged below:
-
+// Farm crops in the farm area
 async function farmCrops() {
   const farmMin = new Vec3(config.farmMin.x, config.farmMin.y, config.farmMin.z);
   const farmMax = new Vec3(config.farmMax.x, config.farmMax.y, config.farmMax.z);
