@@ -1,241 +1,287 @@
 const mineflayer = require('mineflayer');
-const vec3 = require('vec3');
-const { pathfinder, Movements, goals: { GoalNear, GoalBlock } } = require('mineflayer-pathfinder');
-const mcData = require('minecraft-data');
-
+const { pathfinder, Movements, goals: { GoalBlock } } = require('mineflayer-pathfinder');
+const Vec3 = require('vec3');
+const mcDataLib = require('minecraft-data');
+const fs = require('fs');
 const config = require('./config.json');
 
 let bot;
-let mcDataInstance;
+let mcData;
 let defaultMove;
-let dayCount = 1;
-let routineInterval; // will hold setTimeout reference
+let sleeping = false;
+let lastDay = -1;
+let patrolIndex = 0;
+let isEating = false;
+
+const chatAnnounceEnabled = config.chatAnnouncements?.enable ?? false;
+const farmingMessage = config.chatAnnouncements?.farmingMessage || "Farming now!";
 
 function createBot() {
+  console.log('⏳ Creating bot...');
   bot = mineflayer.createBot({
     host: config.host,
     port: config.port,
-    username: config.username,
-    version: config.version
+    username: config.username || 'Bot',
+    version: config.version || false,
+    auth: 'offline'
   });
 
   bot.loadPlugin(pathfinder);
 
-  bot.once('login', () => {
-    log('Logged in, sending /login command...');
-    bot.chat(`/login ${config.password}`);
+  bot.once('spawn', onBotReady);
+  bot.on('error', err => console.error('❌ Bot error:', err));
+  bot.on('kicked', reason => {
+    console.log('❌ Bot kicked:', reason);
+    cleanupAndReconnect();
   });
-
-  bot.on('chat', (username, message) => {
-    if (username === bot.username) return; // ignore own messages
-    const lower = message.toLowerCase();
-    if (lower.includes('please login') || lower.includes('login')) {
-      log('Detected login prompt, sending /login command again...');
-      bot.chat(`/login ${config.password}`);
-    }
-  });
-
-  bot.once('spawn', () => {
-    mcDataInstance = mcData(bot.version);
-    defaultMove = new Movements(bot, mcDataInstance);
-    defaultMove.canDig = true;
-    bot.pathfinder.setMovements(defaultMove);
-
-    startDailyRoutine();
-  });
-
-  bot.on('kicked', (reason) => {
-    log(`Kicked from server: ${reason}. Reconnecting in 10 seconds...`);
-    clearTimeout(routineInterval);
-    setTimeout(createBot, 10000);
-  });
-
   bot.on('end', () => {
-    log('Bot disconnected from server. Reconnecting in 10 seconds...');
-    clearTimeout(routineInterval);
-    setTimeout(createBot, 10000);
+    console.log('❌ Bot disconnected.');
+    cleanupAndReconnect();
   });
 
-  bot.on('error', (err) => {
-    log(`Error: ${err.message}`);
+  bot.on('message', (msg) => {
+    const text = msg.toString().toLowerCase();
+    const password = config.password;
+    if (text.includes('register')) {
+      bot.chat(`/register ${password} ${password}`);
+      log('[Login] Registered');
+    } else if (text.includes('login')) {
+      bot.chat(`/login ${password}`);
+      log('[Login] Logged in');
+    }
   });
 }
 
-createBot();
+function cleanupAndReconnect() {
+  if (!bot) return;
+  bot.removeAllListeners();
+  bot = null;
+  sleeping = false;
+  lastDay = -1;
+  patrolIndex = 0;
+  setTimeout(createBot, 5000);
+}
 
 function log(msg) {
-  console.log(`[BOT] ${msg}`);
+  const time = new Date().toISOString();
+  const line = `[${time}] ${msg}`;
+  console.log(line);
+  fs.appendFileSync('logs.txt', line + '\n');
 }
 
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+async function onBotReady() {
+  console.log('🟢 Bot spawned.');
+  mcData = mcDataLib(bot.version);
+  defaultMove = new Movements(bot, mcData);
+  defaultMove.canDig = false;
+  defaultMove.allow1by1tallDoors = true;
+  bot.pathfinder.setMovements(defaultMove);
+
+  bot.on('physicsTick', eatWhenHungry);
+  dailyRoutineLoop();
 }
 
-async function openDoor() {
-  const doorPos = vec3(config.door.x, config.door.y, config.door.z);
-  const block = bot.blockAt(doorPos);
-  if (!block) {
-    log('Door block not found!');
-    return false;
-  }
-  if (block.name.includes('door')) {
+async function openDoorAt(pos) {
+  const doorBlock = bot.blockAt(new Vec3(pos.x, pos.y, pos.z));
+  if (doorBlock && doorBlock.name.includes('door') && doorBlock.properties.open === false) {
     try {
-      await bot.activateBlock(block);
-      log('Door opened/activated');
-      await delay(1000);
+      await bot.activateBlock(doorBlock);
+      log(`Opened door at ${pos.x},${pos.y},${pos.z}`);
     } catch (err) {
-      log('Error activating door: ' + err.message);
+      console.error('Failed to open door:', err);
     }
   }
-  return true;
 }
 
-async function sleepInBed() {
-  // Fix: find all bed block IDs (any color)
-  const bedIds = Object.values(mcDataInstance.blocks)
-    .filter(b => b.name.endsWith('_bed'))
-    .map(b => b.id);
+async function dailyRoutineLoop() {
+  if (sleeping) return;
 
-  const bedBlock = bot.findBlock({
-    matching: bedIds,
-    maxDistance: config.searchRange
-  });
-
-  if (!bedBlock) {
-    log('No bed found to sleep in.');
-    return false;
-  }
   try {
-    await bot.sleep(bedBlock);
-    log('Slept in bed successfully.');
-    return true;
+    const time = bot.time?.dayTime ?? 0;
+    const currentDay = Math.floor(bot.time.age / 24000);
+
+    if (time >= 13000 && time <= 23458) {
+      await goToBed();
+    } else if (currentDay !== lastDay) {
+      lastDay = currentDay;
+      if (currentDay % 2 === 0) {
+        await roamLoop();
+      } else {
+        await openDoorAt(config.door);
+        await bot.pathfinder.goto(new GoalBlock(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z));
+        if (chatAnnounceEnabled) bot.chat(farmingMessage);
+        await farmCrops();
+        await craftBread();
+        await storeExcessItems();
+      }
+    }
   } catch (err) {
-    log('Could not sleep in bed: ' + err.message);
-    return false;
+    console.error('Error in dailyRoutineLoop:', err);
   }
+
+  setTimeout(dailyRoutineLoop, 5000);
 }
 
-async function roamAroundCenter() {
-  const center = vec3(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z);
-  const radius = 3;
+async function roamLoop() {
+  if (sleeping) return;
+
+  const center = new Vec3(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z);
+  const radius = 5;
   const points = [
-    center.offset(radius, 0, radius),
-    center.offset(-radius, 0, radius),
-    center.offset(-radius, 0, -radius),
-    center.offset(radius, 0, -radius)
+    center.offset(-radius, 0, 0),
+    center.offset(radius, 0, 0),
+    center.offset(0, 0, -radius),
+    center.offset(0, 0, radius)
   ];
-  log('Roaming around house center...');
-  for (const point of points) {
-    await bot.pathfinder.goto(new GoalNear(point.x, point.y, point.z, 1));
-  }
-  log('Finished roaming around house center.');
-}
 
-async function eatFood() {
-  if (bot.food >= 20) return;
-  const foodItems = bot.inventory.items().filter(item => {
-    return mcDataInstance.foodsById[item.type] !== undefined;
-  });
-  if (foodItems.length === 0) {
-    log('No food to eat.');
-    return;
-  }
   try {
-    await bot.equip(foodItems[0], 'hand');
-    await bot.consume();
-    log('Ate some food to restore hunger.');
+    const goal = points[patrolIndex];
+    patrolIndex = (patrolIndex + 1) % points.length;
+
+    await openDoorAt(config.door);
+    await bot.pathfinder.goto(new GoalBlock(goal.x, goal.y, goal.z));
   } catch (err) {
-    log('Error eating food: ' + err.message);
+    console.error('Error in roamLoop:', err);
+  }
+
+  setTimeout(roamLoop, 5000);
+}
+
+function eatWhenHungry() {
+  if (isEating || bot.food >= 18) return;
+
+  const foodItem = bot.inventory.items().find(i => {
+    const itemData = mcData.items[i.type];
+    return itemData && itemData.food !== undefined;
+  });
+
+  if (foodItem) {
+    isEating = true;
+    bot.equip(foodItem, 'hand')
+      .then(() => bot.consume())
+      .catch(err => console.error('Error eating:', err))
+      .finally(() => { isEating = false; });
   }
 }
 
-async function harvestAndReplantFarm() {
-  log('Starting farm harvest and replant...');
-  const min = vec3(config.farmMin.x, config.farmMin.y, config.farmMin.z);
-  const max = vec3(config.farmMax.x, config.farmMax.y, config.farmMax.z);
+async function goToBed() {
+  if (sleeping) return;
+  const bed = bot.findBlock({ matching: block => block.name.endsWith('_bed'), maxDistance: 16 });
+  if (!bed) return console.log('No bed found nearby.');
 
-  for (let x = min.x; x <= max.x; x++) {
-    for (let z = min.z; z <= max.z; z++) {
-      const pos = vec3(x, min.y, z);
-      const block = bot.blockAt(pos);
-      if (!block) continue;
+  try {
+    await openDoorAt(config.door);
+    await bot.pathfinder.goto(new GoalBlock(bed.position.x, bed.position.y, bed.position.z));
+    await bot.sleep(bed);
+    sleeping = true;
+    console.log('Bot is now sleeping.');
+    bot.once('wake', () => {
+      sleeping = false;
+      dailyRoutineLoop();
+    });
+  } catch (err) {
+    console.error('Error going to bed:', err);
+  }
+}
 
-      if (block.name === 'wheat' && block.properties.age === '7') {
+async function farmCrops() {
+  const farmMin = new Vec3(config.farmMin.x, config.farmMin.y, config.farmMin.z);
+  const farmMax = new Vec3(config.farmMax.x, config.farmMax.y, config.farmMax.z);
+
+  for (let x = farmMin.x; x <= farmMax.x; x++) {
+    for (let z = farmMin.z; z <= farmMax.z; z++) {
+      const soil = bot.blockAt(new Vec3(x, farmMin.y, z));
+      const crop = bot.blockAt(new Vec3(x, farmMin.y + 1, z));
+      if (!soil || !crop || soil.name !== 'farmland') continue;
+      if (crop.properties?.age === 7) {
         try {
-          await bot.pathfinder.goto(new GoalNear(pos.x, pos.y, pos.z, 1));
-          await bot.dig(block);
-          log(`Harvested wheat at ${pos.x},${pos.y},${pos.z}`);
-
-          const seed = bot.inventory.items().find(i => i.name === 'wheat_seeds');
-          if (seed) {
-            await bot.placeBlock(bot.blockAt(pos.offset(0, -1, 0)), new vec3(0, 1, 0));
-            log(`Replanted wheat seeds at ${pos.x},${pos.y},${pos.z}`);
-          }
+          await bot.dig(crop);
+          await replantCrop(soil, crop.name);
         } catch (err) {
-          log('Error harvesting/replanting: ' + err.message);
+          console.error('Error farming crops:', err);
         }
       }
     }
   }
-  log('Finished farm harvest/replant.');
 }
 
-async function useBlockNearby(name) {
-  const blockId = mcDataInstance.blocksByName[name] ? mcDataInstance.blocksByName[name].id : null;
-  if (!blockId) {
-    log(`Block ${name} not found in mcData.`);
-    return null;
+async function replantCrop(soil, cropName) {
+  let seedName = 'seeds';
+  if (cropName.includes('potato')) seedName = 'potato';
+  else if (cropName.includes('carrot')) seedName = 'carrot';
+
+  let seedItem = bot.inventory.items().find(i => i.name.includes(seedName));
+  if (!seedItem) {
+    const gotSeed = await getItemFromChest(seedName, 3);
+    if (!gotSeed) return;
+    seedItem = bot.inventory.items().find(i => i.name.includes(seedName));
   }
-  const block = bot.findBlock({
-    matching: blockId,
-    maxDistance: config.searchRange
-  });
-  if (!block) {
-    log(`No ${name} found nearby.`);
-    return null;
+
+  if (seedItem) {
+    await bot.equip(seedItem, 'hand');
+    await bot.placeBlock(soil, new Vec3(0, 1, 0));
   }
+}
+
+async function craftBread() {
+  const wheatId = mcData.itemsByName.wheat.id;
+  const wheatCount = bot.inventory.count(wheatId);
+  if (wheatCount < 3) return;
+
+  const craftingTable = bot.findBlock({ matching: block => block.name === 'crafting_table', maxDistance: 16 });
+  if (!craftingTable) return console.log('No crafting table found nearby.');
+
   try {
-    await bot.pathfinder.goto(new GoalNear(block.position.x, block.position.y, block.position.z, 1));
-    await bot.activateBlock(block);
-    log(`Used ${name} at ${block.position.x},${block.position.y},${block.position.z}`);
-    return block;
-  } catch (err) {
-    log(`Failed to use ${name}: ${err.message}`);
-    return null;
-  }
-}
-
-async function dailyRoutine() {
-  log(`Starting Day ${dayCount} routine.`);
-
-  await openDoor();
-  await eatFood();
-
-  if (dayCount % 2 === 1) {
-    if (config.chatAnnouncements.enable) {
-      bot.chat(config.chatAnnouncements.farmingMessage);
+    await openDoorAt(config.door);
+    await bot.pathfinder.goto(new GoalBlock(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z));
+    const recipe = bot.recipesFor(mcData.itemsByName.bread.id, null, 1, craftingTable)[0];
+    if (recipe) {
+      await bot.craft(recipe, Math.floor(wheatCount / 3), craftingTable);
     }
-    await harvestAndReplantFarm();
-    await sleepInBed();
-  } else {
-    await roamAroundCenter();
-    await sleepInBed();
+  } catch (err) {
+    console.error('Error crafting bread:', err);
   }
-
-  log(`Day ${dayCount} routine finished.`);
-  dayCount++;
-
-  if (dayCount > 4) dayCount = 1;
-
-  routineInterval = setTimeout(dailyRoutine, 20 * 60 * 1000);
 }
 
-function startDailyRoutine() {
-  log('Starting daily routine loop...');
-  dailyRoutine();
+async function storeExcessItems() {
+  const chest = bot.findBlock({ matching: block => block.name === 'chest', maxDistance: 16 });
+  if (!chest) return console.log('No chest found nearby.');
+
+  try {
+    await openDoorAt(config.door);
+    const chestWindow = await bot.openContainer(chest);
+    const keepNames = ['bread', 'seeds', 'potato', 'carrot', 'hoe'];
+
+    for (const item of bot.inventory.items()) {
+      if (keepNames.some(name => item.name.includes(name))) continue;
+      await bot.transfer(item, chestWindow, item.count);
+    }
+    chestWindow.close();
+  } catch (err) {
+    console.error('Error storing items:', err);
+  }
 }
 
-// Auto eat every minute
-setInterval(() => {
-  if (bot && bot.isAlive) eatFood();
-}, 60 * 1000);
+async function getItemFromChest(name, amount) {
+  const chest = bot.findBlock({ matching: block => block.name === 'chest', maxDistance: 16 });
+  if (!chest) return false;
+
+  try {
+    await openDoorAt(config.door);
+    const chestWindow = await bot.openContainer(chest);
+    const item = chestWindow.containerItems().find(i => i.name.includes(name));
+    if (!item) {
+      chestWindow.close();
+      return false;
+    }
+    await bot.transfer(item, bot.inventory, amount);
+    chestWindow.close();
+    return true;
+  } catch (err) {
+    console.error('Error getting item from chest:', err);
+    return false;
+  }
+}
+
+// Start the bot
+createBot();
