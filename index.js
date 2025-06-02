@@ -164,30 +164,36 @@ async function dailyRoutineLoop() {
   setTimeout(dailyRoutineLoop, 5000);
 }
 
+let isRoaming = false; // Flag to prevent concurrent pathfinding
+
 async function roamLoop() {
-  if (sleeping) return;
+  if (sleeping || isRoaming) return;
+  isRoaming = true;
 
   const center = config.walkCenter;
-
   const offsetX = Math.floor(Math.random() * 11) - 5;
   const offsetZ = Math.floor(Math.random() * 11) - 5;
-
   const targetX = center.x + offsetX;
   const targetZ = center.z + offsetZ;
   const targetY = center.y;
 
+  const botPos = bot.entity.position;
+  log(`RoamLoop: Bot at ${botPos.x}, ${botPos.y}, ${botPos.z}, target: ${targetX}, ${targetY}, ${targetZ}`);
+
   try {
     await openDoorAt(new Vec3(targetX, targetY, targetZ));
-    log(`Roaming to ${targetX}, ${targetY}, ${targetZ}`);
+    log(`RoamLoop: Door opened, proceeding to target`);
     await bot.pathfinder.goto(new GoalBlock(targetX, targetY, targetZ));
+    log(`RoamLoop: Reached target successfully`); // Log success
   } catch (err) {
     if (err.message?.includes("NoPath")) {
-      console.warn('⚠️ No path to goal in roamLoop. Skipping.');
+      console.warn('⚠️ RoamLoop: No path to goal. Retrying in 5 seconds...');
     } else {
       console.error('Error in roamLoop:', err);
     }
   } finally {
-    setTimeout(roamLoop, 5000);
+    isRoaming = false;
+    setTimeout(roamLoop, 5000); // Retry after 5 seconds
   }
 }
 
