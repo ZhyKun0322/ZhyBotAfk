@@ -1,5 +1,5 @@
 const mineflayer = require('mineflayer');
-const { pathfinder, Movements, goals: { GoalBlock } } = require('mineflayer-pathfinder');
+const { pathfinder, Movements, goals: { GoalBlock, GoalNear } } = require('mineflayer-pathfinder');
 const fs = require('fs');
 const Vec3 = require('vec3');
 const config = require('./config.json');
@@ -48,7 +48,6 @@ bot.once('spawn', () => {
   const defaultMove = new Movements(bot, mcData);
   bot.pathfinder.setMovements(defaultMove);
 
-  // House center and size for roaming
   const houseCenter = new Vec3(-1244, 72, -448);
   const houseSize = 11;
 
@@ -76,6 +75,7 @@ bot.once('spawn', () => {
     bot.once('goal_reached', onGoalReached);
   }
 
+  // Start roaming after spawn
   roamInsideHouse();
 
   // Prevent block breaking
@@ -147,6 +147,48 @@ bot.once('spawn', () => {
       });
     }, 60000);
   }
+
+  // Exit house using door and resume roaming
+  function exitHouse() {
+    const doorBlock = bot.findBlock({
+      matching: block => block.name.includes('door'),
+      maxDistance: 10
+    });
+
+    if (!doorBlock) {
+      log('[Door] No door found nearby.');
+      roamInsideHouse(); // fallback
+      return;
+    }
+
+    const doorPos = doorBlock.position;
+    const isOpen = doorBlock.metadata & 0x4;
+
+    if (!isOpen) {
+      bot.activateBlock(doorBlock);
+      log(`[Door] Opened door at ${doorPos}`);
+    }
+
+    const dirVec = bot.entity.position.minus(doorPos).normalize();
+    const exitPos = doorPos.plus(dirVec.scaled(2)).floored();
+
+    const goal = new GoalNear(exitPos.x, exitPos.y, exitPos.z, 1);
+    bot.pathfinder.setGoal(goal);
+
+    bot.once('goal_reached', () => {
+      log(`[Move] Exited house through the door at ${doorPos}`);
+      setTimeout(() => {
+        bot.activateBlock(doorBlock);
+        log(`[Door] Closed door at ${doorPos}`);
+        setTimeout(roamInsideHouse, 3000); // Resume roaming
+      }, 1000);
+    });
+  }
+
+  // Trigger exit after 15 seconds (so bot roams a bit first)
+  setTimeout(() => {
+    exitHouse();
+  }, 15000);
 });
 
 // Reconnect on crash or disconnect
