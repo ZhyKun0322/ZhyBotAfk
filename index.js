@@ -133,14 +133,14 @@ async function roamLoop() {
   if (sleeping) return;
 
   const center = config.walkCenter;
-  const size = 3; // 6x6 area
 
-  const randomOffsetX = Math.floor(Math.random() * (size * 2 + 1)) - size;
-  const randomOffsetZ = Math.floor(Math.random() * (size * 2 + 1)) - size;
+  // Random position inside 11x11 area on X and Z
+  const offsetX = Math.floor(Math.random() * 11) - 5;
+  const offsetZ = Math.floor(Math.random() * 11) - 5;
 
-  const targetX = center.x + randomOffsetX;
-  const targetZ = center.z + randomOffsetZ;
-  const targetY = center.y;
+  const targetX = center.x + offsetX;
+  const targetZ = center.z + offsetZ;
+  const targetY = center.y; // stay on same floor level
 
   try {
     await openDoorAt(config.door);
