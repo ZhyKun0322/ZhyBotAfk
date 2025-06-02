@@ -23,6 +23,7 @@ function createBot() {
 
   bot.loadPlugin(pathfinder);
 
+  // Event handlers
   bot.once('login', () => console.log('✅ Bot logged in'));
   bot.once('spawn', onBotReady);
 
@@ -38,6 +39,7 @@ function createBot() {
     cleanupAndReconnect();
   });
 
+  // Remove listeners and reconnect after 5 seconds
   function cleanupAndReconnect() {
     if (!bot) return;
     bot.removeAllListeners();
@@ -53,26 +55,23 @@ function createBot() {
     defaultMove = new Movements(bot, mcData);
     defaultMove.canDig = false;
     bot.pathfinder.setMovements(defaultMove);
-
     sleeping = false;
     lastDay = -1;
     patrolIndex = 0;
 
+    // Register physicsTick once per bot spawn
     bot.on('physicsTick', eatWhenHungry);
 
     dailyRoutineLoop();
     furnaceSmeltLoop();
   }
 
+  // Main loops
+
   async function dailyRoutineLoop() {
     if (sleeping) return;
 
     try {
-      if (!bot.time) {
-        // Time info not ready yet, retry later
-        return setTimeout(dailyRoutineLoop, 5000);
-      }
-
       const time = bot.time.timeOfDay;
       const currentDay = Math.floor(bot.time.age / 24000);
 
@@ -84,9 +83,7 @@ function createBot() {
           roamLoop();
         } else {
           await bot.pathfinder.goto(new GoalBlock(
-            config.walkCenter.x,
-            config.walkCenter.y,
-            config.walkCenter.z
+            config.walkCenter.x, config.walkCenter.y, config.walkCenter.z
           ));
           await farmCrops();
           await craftBread();
@@ -155,12 +152,30 @@ function createBot() {
     }
   }
 
+  // UPDATED findBed function to find the nearest bed dynamically
   function findBed() {
-    return bot.findBlock({
+    const maxDistance = 20; // search radius around the bot
+
+    const beds = bot.findBlocks({
       matching: block => block.name.endsWith('_bed'),
-      maxDistance: 6,
-      validate: block => isInArea(block.position, config.bedArea),
+      maxDistance,
+      count: 10 // max number of beds to find
     });
+
+    if (beds.length === 0) return null;
+
+    let closestBed = beds[0];
+    let closestDist = bot.entity.position.distanceTo(closestBed);
+
+    for (const bedPos of beds) {
+      const dist = bot.entity.position.distanceTo(bedPos);
+      if (dist < closestDist) {
+        closestBed = bedPos;
+        closestDist = dist;
+      }
+    }
+
+    return bot.blockAt(closestBed);
   }
 
   function isInArea(pos, area) {
