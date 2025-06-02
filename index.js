@@ -21,6 +21,15 @@ function log(msg) {
   fs.appendFileSync('logs.txt', message + '\n');
 }
 
+// Track keep-alive packets
+let lastKeepAliveTime = Date.now();
+const keepAliveTimeout = 15000; // 15 seconds
+
+bot._client.on('keep_alive', () => {
+  lastKeepAliveTime = Date.now();
+  log(`[Debug] Received keep-alive packet`);
+});
+
 // Error and disconnect handling
 bot._client.on('error', err => log(`[Client Error] ${err.message}`));
 bot._client.on('close', () => log(`[Client] Connection closed.`));
@@ -203,6 +212,15 @@ bot.once('spawn', () => {
   }
 
   setTimeout(exitHouse, 15000);
+
+  // Watchdog for missed keep-alives
+  setInterval(() => {
+    const now = Date.now();
+    if (now - lastKeepAliveTime > keepAliveTimeout) {
+      log(`[Warning] Missed keep-alive for ${now - lastKeepAliveTime} ms. Restarting bot...`);
+      bot.quit();
+    }
+  }, 5000);
 });
 
 // Reconnect logic
