@@ -5,19 +5,63 @@ const mcData = require('minecraft-data');
 
 const config = require('./config.json');
 
-const bot = mineflayer.createBot({
-  host: config.host,
-  port: config.port,
-  username: config.username,
-  version: config.version
-});
-
-bot.loadPlugin(pathfinder);
-
+let bot;
+let mcDataInstance;
+let defaultMove;
 let dayCount = 1;
-let routineInterval; // will hold setInterval reference
+let routineInterval; // will hold setTimeout reference
 
-// Utils
+function createBot() {
+  bot = mineflayer.createBot({
+    host: config.host,
+    port: config.port,
+    username: config.username,
+    version: config.version
+  });
+
+  bot.loadPlugin(pathfinder);
+
+  bot.once('login', () => {
+    log('Logged in, sending /login command...');
+    bot.chat(`/login ${config.password}`);
+  });
+
+  bot.on('chat', (username, message) => {
+    if (username === bot.username) return; // ignore own messages
+    const lower = message.toLowerCase();
+    if (lower.includes('please login') || lower.includes('login')) {
+      log('Detected login prompt, sending /login command again...');
+      bot.chat(`/login ${config.password}`);
+    }
+  });
+
+  bot.once('spawn', () => {
+    mcDataInstance = mcData(bot.version);
+    defaultMove = new Movements(bot, mcDataInstance);
+    defaultMove.canDig = true;
+    bot.pathfinder.setMovements(defaultMove);
+
+    startDailyRoutine();
+  });
+
+  bot.on('kicked', (reason) => {
+    log(`Kicked from server: ${reason}. Reconnecting in 10 seconds...`);
+    clearTimeout(routineInterval);
+    setTimeout(createBot, 10000);
+  });
+
+  bot.on('end', () => {
+    log('Bot disconnected from server. Reconnecting in 10 seconds...');
+    clearTimeout(routineInterval);
+    setTimeout(createBot, 10000);
+  });
+
+  bot.on('error', (err) => {
+    log(`Error: ${err.message}`);
+  });
+}
+
+createBot();
 
 function log(msg) {
   console.log(`[BOT] ${msg}`);
@@ -27,35 +71,6 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Auto login with LoginSecurity
-bot.once('login', () => {
-  log('Logged in, sending /login command...');
-  bot.chat(`/login ${config.password}`);
-});
-
-// Listen for chat login prompts and auto login again if needed
-bot.on('chat', (username, message) => {
-  if (username === bot.username) return; // ignore own messages
-  const lower = message.toLowerCase();
-  if (lower.includes('please login') || lower.includes('login')) {
-    log('Detected login prompt, sending /login command again...');
-    bot.chat(`/login ${config.password}`);
-  }
-});
-
-// Setup movements
-let mcDataInstance;
-let defaultMove;
-
-bot.once('spawn', () => {
-  mcDataInstance = mcData(bot.version);
-  defaultMove = new Movements(bot, mcDataInstance);
-  defaultMove.canDig = true;
-  bot.pathfinder.setMovements(defaultMove);
-
-  startDailyRoutine();
-});
-
 async function openDoor() {
   const doorPos = vec3(config.door.x, config.door.y, config.door.z);
   const block = bot.blockAt(doorPos);
@@ -63,7 +78,6 @@ async function openDoor() {
     log('Door block not found!');
     return false;
   }
-  // If door is closed, open it by right-click
   if (block.name.includes('door')) {
     try {
       await bot.activateBlock(block);
@@ -77,8 +91,13 @@ async function openDoor() {
 }
 
 async function sleepInBed() {
+  // Fix: find all bed block IDs (any color)
+  const bedIds = Object.values(mcDataInstance.blocks)
+    .filter(b => b.name.endsWith('_bed'))
+    .map(b => b.id);
+
   const bedBlock = bot.findBlock({
-    matching: mcDataInstance.blocksByName.bed.id,
+    matching: bedIds,
     maxDistance: config.searchRange
   });
 
@@ -96,10 +115,9 @@ async function sleepInBed() {
   }
 }
 
-// Roam in circle around walkCenter, 6x6 blocks roughly
 async function roamAroundCenter() {
   const center = vec3(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z);
-  const radius = 3; // half of 6x6 area
+  const radius = 3;
   const points = [
     center.offset(radius, 0, radius),
     center.offset(-radius, 0, radius),
@@ -133,28 +151,21 @@ async function eatFood() {
 
 async function harvestAndReplantFarm() {
   log('Starting farm harvest and replant...');
-  // Simple approach: find fully grown crops in farm area, harvest, and replant seeds
   const min = vec3(config.farmMin.x, config.farmMin.y, config.farmMin.z);
   const max = vec3(config.farmMax.x, config.farmMax.y, config.farmMax.z);
 
-  // We check every block in farm rectangle for fully grown crops
   for (let x = min.x; x <= max.x; x++) {
     for (let z = min.z; z <= max.z; z++) {
       const pos = vec3(x, min.y, z);
       const block = bot.blockAt(pos);
       if (!block) continue;
 
-      // For wheat example, fully grown crop has metadata or block states indicating growth stage
-      // Let's check for wheat crop fully grown by checking block name and properties
-
-      // Check wheat fully grown (simplified: name 'wheat' and age=7)
       if (block.name === 'wheat' && block.properties.age === '7') {
         try {
           await bot.pathfinder.goto(new GoalNear(pos.x, pos.y, pos.z, 1));
           await bot.dig(block);
           log(`Harvested wheat at ${pos.x},${pos.y},${pos.z}`);
 
-          // Replant seed if available
           const seed = bot.inventory.items().find(i => i.name === 'wheat_seeds');
           if (seed) {
             await bot.placeBlock(bot.blockAt(pos.offset(0, -1, 0)), new vec3(0, 1, 0));
@@ -170,7 +181,6 @@ async function harvestAndReplantFarm() {
 }
 
 async function useBlockNearby(name) {
-  // Search for block by name nearby within searchRange
   const blockId = mcDataInstance.blocksByName[name] ? mcDataInstance.blocksByName[name].id : null;
   if (!blockId) {
     log(`Block ${name} not found in mcData.`);
@@ -184,7 +194,6 @@ async function useBlockNearby(name) {
     log(`No ${name} found nearby.`);
     return null;
   }
-  // Go to block and activate it
   try {
     await bot.pathfinder.goto(new GoalNear(block.position.x, block.position.y, block.position.z, 1));
     await bot.activateBlock(block);
@@ -199,15 +208,8 @@ async function useBlockNearby(name) {
 async function dailyRoutine() {
   log(`Starting Day ${dayCount} routine.`);
 
-  // 1. Open door to enter house if needed
   await openDoor();
-
-  // 2. Auto eat to avoid starvation
   await eatFood();
-
-  // 3. Routine per day:
-  // Odd days: farm (harvest and replant)
-  // Even days: roam around house
 
   if (dayCount % 2 === 1) {
     if (config.chatAnnouncements.enable) {
@@ -223,9 +225,8 @@ async function dailyRoutine() {
   log(`Day ${dayCount} routine finished.`);
   dayCount++;
 
-  if (dayCount > 4) dayCount = 1; // cycle 4-day routine (you can expand this)
+  if (dayCount > 4) dayCount = 1;
 
-  // Schedule next day routine in 20 minutes (1200000 ms) - adjust as you want
   routineInterval = setTimeout(dailyRoutine, 20 * 60 * 1000);
 }
 
@@ -234,19 +235,7 @@ function startDailyRoutine() {
   dailyRoutine();
 }
 
-// Auto eat periodically every 1 min to avoid starvation
+// Auto eat every minute
 setInterval(() => {
-  if (bot.isAlive) eatFood();
+  if (bot && bot.isAlive) eatFood();
 }, 60 * 1000);
-
-// Handle errors
-bot.on('kicked', (reason) => {
-  log(`Kicked: ${reason}`);
-});
-bot.on('error', (err) => {
-  log(`Error: ${err.message}`);
-});
-bot.on('end', () => {
-  log('Bot disconnected, exiting.');
-  process.exit();
-});
