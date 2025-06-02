@@ -292,15 +292,14 @@ function createBot() {
   }
 
   async function findBlockInHouse(matchFn) {
-    // House is 11x11 around walkCenter, assume y = walkCenter.y for scanning blocks
-    const houseRadius = 5; // half of 11 (approx)
-
+    // House is 11x11 around walkCenter, scan 3 vertical layers (y-1 to y+1)
+    const houseRadius = 5; // half of 11 blocks
     const center = new Vec3(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z);
 
     const foundBlocks = [];
 
     for (let x = center.x - houseRadius; x <= center.x + houseRadius; x++) {
-      for (let y = center.y - 1; y <= center.y + 1; y++) { // scan 3 vertical layers (to catch chests, tables on y and y+1)
+      for (let y = center.y - 1; y <= center.y + 1; y++) {
         for (let z = center.z - houseRadius; z <= center.z + houseRadius; z++) {
           const block = bot.blockAt(new Vec3(x, y, z));
           if (!block) continue;
@@ -311,4 +310,11 @@ function createBot() {
       }
     }
 
-    if (found
+    if (foundBlocks.length === 0) return null;
+    // Return closest block to bot's position
+    foundBlocks.sort((a, b) => bot.entity.position.distanceTo(a.position) - bot.entity.position.distanceTo(b.position));
+    return foundBlocks[0];
+  }
+}
+
+createBot();
