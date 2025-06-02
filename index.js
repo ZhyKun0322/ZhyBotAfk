@@ -29,14 +29,12 @@ async function openDoorAt(pos) {
   if (!block) return false;
   if (!block.name.includes('door')) return false;
 
-  // Check if door is closed, then open it
   const isOpen = block.state?.open || block.properties?.open === 'true';
   if (!isOpen) {
     try {
       await bot.interact(block);
       log(`Opened door at ${pos.x}, ${pos.y}, ${pos.z}`);
       if (chatAnnounceEnabled) bot.chat('Opening door...');
-      // Small wait for door to open
       await new Promise(r => setTimeout(r, 1000));
       return true;
     } catch (err) {
@@ -126,7 +124,6 @@ async function dailyRoutineLoop() {
       if (currentDay % 2 === 0) {
         await roamLoop();
       } else {
-        // Before going to farm, open door if present near farmMin position
         await openDoorAt(new Vec3(config.farmMin.x, config.farmMin.y, config.farmMin.z));
         await bot.pathfinder.goto(new GoalBlock(config.farmMin.x, config.farmMin.y, config.farmMin.z));
 
@@ -139,7 +136,6 @@ async function dailyRoutineLoop() {
 
         await storeExcessItems();
 
-        // Open door near walkCenter before walking there
         await openDoorAt(new Vec3(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z));
         await bot.pathfinder.goto(new GoalBlock(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z));
       }
@@ -164,7 +160,6 @@ async function roamLoop() {
   const targetY = center.y;
 
   try {
-    // Try opening door before moving if door is near target
     await openDoorAt(new Vec3(targetX, targetY, targetZ));
     await bot.pathfinder.goto(new GoalBlock(targetX, targetY, targetZ));
   } catch (err) {
@@ -209,7 +204,6 @@ async function goToBed() {
   }
 
   try {
-    // Open door if needed before going to bed
     await openDoorAt(bed.position);
     await bot.pathfinder.goto(new GoalBlock(bed.position.x, bed.position.y, bed.position.z));
     await bot.sleep(bed);
@@ -312,7 +306,6 @@ async function storeExcessItems() {
     const chestWindow = await bot.openContainer(chest);
     log('Opened chest for storing items.');
     if (chatAnnounceEnabled) bot.chat('Storing excess items...');
-    // TODO: implement actual item transfer here if you want
     chestWindow.close();
     log('Chest closed.');
   } catch (err) {
