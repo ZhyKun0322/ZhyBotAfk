@@ -19,7 +19,7 @@ const farmingMessage = config.chatAnnouncements?.farmingMessage || "Farming now!
 async function openDoorAt(pos) {
   const doorBlock = bot.blockAt(new Vec3(pos.x, pos.y, pos.z));
   if (doorBlock && doorBlock.name.includes('door')) {
-    if (doorBlock.properties.open === 'false') {
+    if (doorBlock.properties.open === false) {
       try {
         await bot.activateBlock(doorBlock);
         console.log(`Opened door at ${pos.x},${pos.y},${pos.z}`);
@@ -31,24 +31,32 @@ async function openDoorAt(pos) {
 }
 
 function createBot() {
+  console.log('⏳ Creating bot...');
   bot = mineflayer.createBot({
     host: config.host,
     port: config.port,
-    username: config.username,
+    username: config.username || 'Bot',
     version: config.version || false,
-    auth: 'offline'
+    auth: 'offline' // Crucial for cracked servers!
   });
 
   bot.loadPlugin(pathfinder);
 
-  bot.once('login', () => console.log('✅ Bot logged in'));
+  bot.once('login', () => {
+    console.log('✅ Bot logged in (offline mode)');
+  });
+
   bot.once('spawn', onBotReady);
 
-  bot.on('error', err => console.error('❌ Bot error:', err));
+  bot.on('error', err => {
+    console.error('❌ Bot error:', err);
+  });
+
   bot.on('kicked', reason => {
     console.log('❌ Bot kicked:', reason);
     cleanupAndReconnect();
   });
+
   bot.on('end', () => {
     console.log('❌ Bot disconnected.');
     cleanupAndReconnect();
@@ -65,10 +73,11 @@ function createBot() {
   }
 
   async function onBotReady() {
+    console.log('🟢 Bot spawned in the world.');
     mcData = mcDataLib(bot.version);
     defaultMove = new Movements(bot, mcData);
     defaultMove.canDig = false;
-    defaultMove.allow1by1tallDoors = true;  // Enable door handling in pathfinder
+    defaultMove.allow1by1tallDoors = true;
     bot.pathfinder.setMovements(defaultMove);
 
     bot.on('physicsTick', eatWhenHungry);
@@ -81,7 +90,7 @@ function createBot() {
     if (sleeping) return;
 
     try {
-      const time = bot.time?.dayTime ?? bot.time?.timeOfDay ?? 0;
+      const time = bot.time?.dayTime ?? 0;
       const currentDay = Math.floor(bot.time.age / 24000);
 
       if (time >= 13000 && time <= 23458) {
@@ -91,12 +100,9 @@ function createBot() {
         if (currentDay % 2 === 0) {
           await roamLoop();
         } else {
-          // Open door before going to walk center
           await openDoorAt(config.door);
           await bot.pathfinder.goto(new GoalBlock(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z));
-          if (chatAnnounceEnabled) {
-            bot.chat(farmingMessage);
-          }
+          if (chatAnnounceEnabled) bot.chat(farmingMessage);
           await farmCrops();
           await craftBread();
           await storeExcessItems();
@@ -109,7 +115,6 @@ function createBot() {
     setTimeout(dailyRoutineLoop, 5000);
   }
 
-  // Updated roamLoop to open door before moving through
   async function roamLoop() {
     if (sleeping) return;
     const center = new Vec3(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z);
@@ -125,7 +130,6 @@ function createBot() {
       const goal = points[patrolIndex];
       patrolIndex = (patrolIndex + 1) % points.length;
 
-      // Open door before going to next patrol point
       await openDoorAt(config.door);
       await bot.pathfinder.goto(new GoalBlock(goal.x, goal.y, goal.z));
     } catch (err) {
@@ -155,12 +159,9 @@ function createBot() {
   async function goToBed() {
     if (sleeping) return;
     const bed = bot.findBlock({ matching: block => block.name.endsWith('_bed'), maxDistance: 16 });
-    if (!bed) {
-      console.log('No bed found nearby.');
-      return;
-    }
+    if (!bed) return console.log('No bed found nearby.');
+
     try {
-      // Open door before going to bed (in case door is between bot and bed)
       await openDoorAt(config.door);
       await bot.pathfinder.goto(new GoalBlock(bed.position.x, bed.position.y, bed.position.z));
       await bot.sleep(bed);
@@ -219,13 +220,9 @@ function createBot() {
     if (wheatCount < 3) return;
 
     const craftingTable = bot.findBlock({ matching: block => block.name === 'crafting_table', maxDistance: 16 });
-    if (!craftingTable) {
-      console.log('No crafting table found nearby.');
-      return;
-    }
+    if (!craftingTable) return console.log('No crafting table found nearby.');
 
     try {
-      // Open door before crafting table
       await openDoorAt(config.door);
       await bot.pathfinder.goto(new GoalBlock(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z));
       const recipe = bot.recipesFor(mcData.itemsByName.bread.id, null, 1, craftingTable)[0];
@@ -239,13 +236,9 @@ function createBot() {
 
   async function storeExcessItems() {
     const chest = bot.findBlock({ matching: block => block.name === 'chest', maxDistance: 16 });
-    if (!chest) {
-      console.log('No chest found nearby.');
-      return;
-    }
+    if (!chest) return console.log('No chest found nearby.');
 
     try {
-      // Open door before chest
       await openDoorAt(config.door);
       const chestWindow = await bot.openContainer(chest);
       const keepNames = ['bread', 'seeds', 'potato', 'carrot', 'hoe'];
@@ -265,7 +258,6 @@ function createBot() {
     if (!chest) return false;
 
     try {
-      // Open door before chest
       await openDoorAt(config.door);
       const chestWindow = await bot.openContainer(chest);
       const item = chestWindow.containerItems().find(i => i.name.includes(name));
@@ -293,13 +285,9 @@ function createBot() {
 
   async function smeltItemsInFurnace() {
     const furnace = bot.findBlock({ matching: block => block.name === 'furnace', maxDistance: 16 });
-    if (!furnace) {
-      console.log('No furnace found nearby.');
-      return;
-    }
+    if (!furnace) return console.log('No furnace found nearby.');
 
     try {
-      // Open door before furnace
       await openDoorAt(config.door);
       const furnaceWindow = await bot.openContainer(furnace);
       const fuelNames = ['coal', 'charcoal', 'log', 'planks'];
