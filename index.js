@@ -23,7 +23,6 @@ function createBot() {
 
   bot.loadPlugin(pathfinder);
 
-  // Event handlers
   bot.once('login', () => console.log('✅ Bot logged in'));
   bot.once('spawn', onBotReady);
 
@@ -39,7 +38,6 @@ function createBot() {
     cleanupAndReconnect();
   });
 
-  // Remove listeners and reconnect after 5 seconds
   function cleanupAndReconnect() {
     if (!bot) return;
     bot.removeAllListeners();
@@ -59,20 +57,18 @@ function createBot() {
     lastDay = -1;
     patrolIndex = 0;
 
-    // Register physicsTick once per bot spawn
     bot.on('physicsTick', eatWhenHungry);
 
     dailyRoutineLoop();
     furnaceSmeltLoop();
   }
 
-  // Main loops
-
   async function dailyRoutineLoop() {
     if (sleeping) return;
 
     try {
-      const time = bot.time.timeOfDay;
+      // Fix here: use bot.time.dayTime (or bot.time.timeOfDay fallback)
+      const time = bot.time?.dayTime ?? bot.time?.timeOfDay ?? 0;
       const currentDay = Math.floor(bot.time.age / 24000);
 
       if (time >= 13000 && time <= 23458) {
@@ -138,11 +134,15 @@ function createBot() {
   async function goToBed() {
     if (sleeping) return;
     const bed = findBed();
-    if (!bed) return;
+    if (!bed) {
+      console.log('No bed found in bedArea.');
+      return;
+    }
     try {
       await bot.pathfinder.goto(new GoalBlock(bed.position.x, bed.position.y, bed.position.z));
       await bot.sleep(bed);
       sleeping = true;
+      console.log('Bot is now sleeping.');
       bot.once('wake', () => {
         sleeping = false;
         dailyRoutineLoop();
@@ -152,30 +152,28 @@ function createBot() {
     }
   }
 
-  // UPDATED findBed function to find the nearest bed dynamically
   function findBed() {
-    const maxDistance = 20; // search radius around the bot
-
-    const beds = bot.findBlocks({
+    // Find all beds in 16 block radius
+    const bedPositions = bot.findBlocks({
       matching: block => block.name.endsWith('_bed'),
-      maxDistance,
-      count: 10 // max number of beds to find
+      maxDistance: 16,
+      count: 10,
+      useExtraInfo: false
     });
 
-    if (beds.length === 0) return null;
+    const bedsInArea = bedPositions
+      .map(pos => bot.blockAt(pos))
+      .filter(bed => bed && isInArea(bed.position, config.bedArea));
 
-    let closestBed = beds[0];
-    let closestDist = bot.entity.position.distanceTo(closestBed);
+    if (bedsInArea.length === 0) return null;
 
-    for (const bedPos of beds) {
-      const dist = bot.entity.position.distanceTo(bedPos);
-      if (dist < closestDist) {
-        closestBed = bedPos;
-        closestDist = dist;
-      }
-    }
+    bedsInArea.sort((a, b) => {
+      const distA = bot.entity.position.distanceTo(a.position);
+      const distB = bot.entity.position.distanceTo(b.position);
+      return distA - distB;
+    });
 
-    return bot.blockAt(closestBed);
+    return bedsInArea[0];
   }
 
   function isInArea(pos, area) {
@@ -307,16 +305,4 @@ function createBot() {
 
       const inputSlot = furnaceWindow.slots[0];
       if (!inputSlot) {
-        const smeltItem = bot.inventory.items().find(i => smeltableNames.some(s => i.name.includes(s)));
-        if (smeltItem) {
-          await furnaceWindow.deposit(smeltItem.type, null, smeltItem.count, 0);
-        }
-      }
-      furnaceWindow.close();
-    } catch (err) {
-      console.error('Error smelting items:', err);
-    }
-  }
-}
-
-createBot();
+        const smeltItem = bot.inventory.items
