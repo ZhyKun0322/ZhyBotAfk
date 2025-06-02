@@ -13,6 +13,7 @@ let lastDay = -1;
 let patrolIndex = 0;
 let isEating = false;
 let alreadyLoggedIn = false;
+let routineRunning = false;
 
 const chatAnnounceEnabled = config.chatAnnouncements?.enable ?? false;
 const farmingMessage = config.chatAnnouncements?.farmingMessage || "Farming now!";
@@ -21,7 +22,11 @@ function log(msg) {
   const time = new Date().toISOString();
   const line = `[${time}] ${msg}`;
   console.log(line);
-  fs.appendFileSync('logs.txt', line + '\n');
+  try {
+    fs.appendFileSync('logs.txt', line + '\n');
+  } catch (e) {
+    console.error('Failed to write log:', e);
+  }
 }
 
 async function openDoorAt(pos) {
@@ -94,6 +99,7 @@ function cleanupAndReconnect() {
   lastDay = -1;
   patrolIndex = 0;
   alreadyLoggedIn = false;
+  routineRunning = false;
   setTimeout(createBot, 5000);
 }
 
@@ -107,7 +113,11 @@ async function onBotReady() {
 
   bot.on('physicsTick', eatWhenHungry);
 
-  dailyRoutineLoop();
+  // Start the routine loop only once:
+  if (!routineRunning) {
+    routineRunning = true;
+    dailyRoutineLoop();
+  }
 }
 
 async function dailyRoutineLoop() {
@@ -117,13 +127,18 @@ async function dailyRoutineLoop() {
     const time = bot.time?.dayTime ?? 0;
     const currentDay = Math.floor(bot.time.age / 24000);
 
+    log(`DailyRoutine running - time: ${time}, day: ${currentDay}`);
+
     if (time >= 13000 && time <= 23458) {
+      log('Time to go to bed...');
       await goToBed();
     } else if (currentDay !== lastDay) {
       lastDay = currentDay;
       if (currentDay % 2 === 0) {
+        log('Even day: roaming');
         await roamLoop();
       } else {
+        log('Odd day: farming');
         await openDoorAt(new Vec3(config.farmMin.x, config.farmMin.y, config.farmMin.z));
         await bot.pathfinder.goto(new GoalBlock(config.farmMin.x, config.farmMin.y, config.farmMin.z));
 
@@ -161,6 +176,7 @@ async function roamLoop() {
 
   try {
     await openDoorAt(new Vec3(targetX, targetY, targetZ));
+    log(`Roaming to ${targetX}, ${targetY}, ${targetZ}`);
     await bot.pathfinder.goto(new GoalBlock(targetX, targetY, targetZ));
   } catch (err) {
     if (err.message?.includes("NoPath")) {
@@ -174,7 +190,7 @@ async function roamLoop() {
 }
 
 function eatWhenHungry() {
-  if (isEating || bot.food >= 18) return;
+  if (isEating || !bot || bot.food >= 18) return;
 
   const foodItem = bot.inventory.items().find(i => {
     const itemData = mcData.items[i.type];
@@ -204,22 +220,39 @@ async function goToBed() {
   }
 
   try {
-    await openDoorAt(bed.position);
+    log(`Found bed at ${bed.position.x}, ${bed.position.y}, ${bed.position.z}. Approaching...`);
+
+    // Try open door in path to bed if any
+    // Scan blocks between bot and bed for doors, open if found
+    const posBot = bot.entity.position;
+    const dirVec = bed.position.minus(posBot).normalize();
+    for (let i = 0; i < 5; i++) {
+      const checkPos = posBot.plus(dirVec.scaled(i));
+      await openDoorAt(checkPos.floored());
+    }
+
     await bot.pathfinder.goto(new GoalBlock(bed.position.x, bed.position.y, bed.position.z));
+
+    log('Reached bed, trying to sleep...');
     await bot.sleep(bed);
+
     sleeping = true;
     log('Bot is now sleeping.');
     if (chatAnnounceEnabled) bot.chat('Going to sleep...');
+
     bot.once('wake', () => {
       sleeping = false;
-      dailyRoutineLoop();
       log('Bot woke up.');
       if (chatAnnounceEnabled) bot.chat('Good morning!');
+      // Restart routine loop immediately after wake up
+      dailyRoutineLoop();
     });
   } catch (err) {
-    console.error('Error going to bed:', err);
+    log('Error going to bed: ' + err.message);
   }
 }
+
+// Rest of your functions farmCrops, replantCrop, craftBread, storeExcessItems, getItemFromChest unchanged below:
 
 async function farmCrops() {
   const farmMin = new Vec3(config.farmMin.x, config.farmMin.y, config.farmMin.z);
