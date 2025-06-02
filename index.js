@@ -12,6 +12,9 @@ let lastDay = -1;
 let patrolIndex = 0;
 let isEating = false;
 
+const chatAnnounceEnabled = config.chatAnnouncements?.enable ?? false;
+const farmingMessage = config.chatAnnouncements?.farmingMessage || "Farming now!";
+
 function createBot() {
   bot = mineflayer.createBot({
     host: config.host,
@@ -73,6 +76,9 @@ function createBot() {
           roamLoop();
         } else {
           await bot.pathfinder.goto(new GoalBlock(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z));
+          if (chatAnnounceEnabled) {
+            bot.chat(farmingMessage);
+          }
           await farmCrops();
           await craftBread();
           await storeExcessItems();
