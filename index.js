@@ -18,7 +18,7 @@ function createBot() {
     port: config.port,
     username: config.username,
     version: config.version || false,
-    auth: 'offline' // change if needed
+    auth: 'offline' // or 'mojang' if needed
   });
 
   bot.loadPlugin(pathfinder);
@@ -27,12 +27,10 @@ function createBot() {
   bot.once('spawn', onBotReady);
 
   bot.on('error', err => console.error('❌ Bot error:', err));
-
   bot.on('kicked', reason => {
-    console.log('❌ Bot was kicked:', reason);
+    console.log('❌ Bot kicked:', reason);
     cleanupAndReconnect();
   });
-
   bot.on('end', () => {
     console.log('❌ Bot disconnected.');
     cleanupAndReconnect();
@@ -67,7 +65,6 @@ function createBot() {
     if (sleeping) return;
 
     try {
-      // Fix here: use bot.time.dayTime (or bot.time.timeOfDay fallback)
       const time = bot.time?.dayTime ?? bot.time?.timeOfDay ?? 0;
       const currentDay = Math.floor(bot.time.age / 24000);
 
@@ -78,9 +75,7 @@ function createBot() {
         if (currentDay % 2 === 0) {
           roamLoop();
         } else {
-          await bot.pathfinder.goto(new GoalBlock(
-            config.walkCenter.x, config.walkCenter.y, config.walkCenter.z
-          ));
+          await bot.pathfinder.goto(new GoalBlock(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z));
           await farmCrops();
           await craftBread();
           await storeExcessItems();
@@ -153,12 +148,11 @@ function createBot() {
   }
 
   function findBed() {
-    // Find all beds in 16 block radius
+    // Find beds in 16 block radius
     const bedPositions = bot.findBlocks({
       matching: block => block.name.endsWith('_bed'),
       maxDistance: 16,
-      count: 10,
-      useExtraInfo: false
+      count: 10
     });
 
     const bedsInArea = bedPositions
@@ -305,4 +299,17 @@ function createBot() {
 
       const inputSlot = furnaceWindow.slots[0];
       if (!inputSlot) {
-        const smeltItem = bot.inventory.items
+        const smeltItem = bot.inventory.items().find(i => smeltableNames.some(name => i.name.includes(name)));
+        if (smeltItem) {
+          await furnaceWindow.deposit(smeltItem.type, null, smeltItem.count, 0);
+        }
+      }
+
+      furnaceWindow.close();
+    } catch (err) {
+      console.error('Error smelting items:', err);
+    }
+  }
+}
+
+createBot();
