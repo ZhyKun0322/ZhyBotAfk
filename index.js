@@ -21,15 +21,6 @@ function log(msg) {
   fs.appendFileSync('logs.txt', message + '\n');
 }
 
-// Track keep-alive packets
-let lastKeepAliveTime = Date.now();
-const keepAliveTimeout = 15000; // 15 seconds
-
-bot._client.on('keep_alive', () => {
-  lastKeepAliveTime = Date.now();
-  log(`[Debug] Received keep-alive packet`);
-});
-
 // Error and disconnect handling
 bot._client.on('error', err => log(`[Client Error] ${err.message}`));
 bot._client.on('close', () => log(`[Client] Connection closed.`));
@@ -48,14 +39,24 @@ bot.on('message', (jsonMsg) => {
   }
 });
 
+let mcData;
+
 bot.once('spawn', () => {
-  const mcData = require('minecraft-data')(bot.version);
+  mcData = require('minecraft-data')(bot.version);
   const defaultMove = new Movements(bot, mcData);
   bot.pathfinder.setMovements(defaultMove);
 
+  // Positions and areas
   const houseCenter = new Vec3(-1244, 72, -448);
   const houseSize = 11;
 
+  const chestPos = new Vec3(-1243, 72, -450);
+  const craftingTablePos = new Vec3(-1242, 72, -450);
+
+  const farmMin = new Vec3(-1233, 71, -449);
+  const farmMax = new Vec3(-1216, 71, -440);
+
+  // Roaming inside house
   async function getRandomWalkablePoint() {
     const half = Math.floor(houseSize / 2);
     const candidates = [];
@@ -63,10 +64,6 @@ bot.once('spawn', () => {
     for (let x = houseCenter.x - half; x <= houseCenter.x + half; x++) {
       for (let z = houseCenter.z - half; z <= houseCenter.z + half; z++) {
         for (let y = houseCenter.y - 1; y <= houseCenter.y + 5; y++) {
-          if (candidates.length > 0 && candidates.length % 100 === 0) {
-            await new Promise(r => setTimeout(r, 0));
-          }
-
           const pos = new Vec3(x, y, z);
           const blockBelow = bot.blockAt(pos.offset(0, -1, 0));
           const blockAt = bot.blockAt(pos);
@@ -93,7 +90,6 @@ bot.once('spawn', () => {
     const goal = new GoalBlock(target.x, target.y, target.z);
     bot.pathfinder.setGoal(goal);
     log(`[Move] Roaming to (${goal.x}, ${goal.y}, ${goal.z})`);
-    bot.setControlState('sprint', false);
 
     const onGoalReached = () => {
       log(`[Move] Reached (${goal.x}, ${goal.y}, ${goal.z}), roaming again soon...`);
@@ -105,131 +101,145 @@ bot.once('spawn', () => {
     bot.once('goal_reached', onGoalReached);
   }
 
-  roamInsideHouse();
+  // Chest interaction helper
+  async function getItem(name, amount) {
+    const chest = bot.blockAt(chestPos);
+    if (!chest) {
+      log('[Chest] Chest not found.');
+      return false;
+    }
+    const chestWindow = await bot.openContainer(chest);
+    const item = chestWindow.containerItems().find(i => i.name.includes(name));
+    if (!item) {
+      log(`[Chest] No ${name} found in chest.`);
+      chestWindow.close();
+      return false;
+    }
 
-  bot.dig = async () => log(`[Block] Digging prevented.`);
-  bot.on('diggingCompleted', block => {
-    log(`[Block] Prevented breaking at ${block.position}`);
-    bot.stopDigging();
-  });
-
-  // Auto sleep
-  setInterval(() => {
-    if (bot.isSleeping) return;
-    const time = bot.time.timeOfDay;
-    if (time >= 13000 && time <= 23000) {
-      const bedBlock = bot.findBlock({
-        matching: block => bot.isABed(block),
-        maxDistance: 10
+    try {
+      await bot.transfer({
+        window: chestWindow,
+        itemType: item.type,
+        metadata: 0,
+        count: amount,
+        sourceStart: chestWindow.containerSlotStart,
+        sourceEnd: chestWindow.containerSlotEnd,
+        destStart: 36,
+        destEnd: 45,
       });
-      if (bedBlock) {
-        bot.sleep(bedBlock)
-          .then(() => log(`[Sleep] Sleeping at ${bedBlock.position}`))
-          .catch(err => log(`[Sleep] Failed to sleep: ${err.message}`));
-      } else {
-        log(`[Sleep] No bed found nearby.`);
-      }
+      log(`[Chest] Took ${amount}x ${name} from chest.`);
+    } catch (err) {
+      log(`[Chest] Error transferring ${name}: ${err.message}`);
     }
-  }, 5000);
-
-  // Auto eat
-  setInterval(() => {
-    if (bot.food < 18) {
-      const food = bot.inventory.items().find(item =>
-        item.name.includes('bread') ||
-        item.name.includes('cooked') ||
-        item.name.includes('apple')
-      );
-      if (food) {
-        bot.equip(food, 'hand')
-          .then(() => bot.consume())
-          .then(() => log(`[Eat] Ate ${food.name}`))
-          .catch(err => log(`[Eat] Failed: ${err.message}`));
-      }
-    }
-  }, 5000);
-
-  // Periodic jumping
-  setInterval(() => {
-    if (bot.entity.onGround) {
-      bot.setControlState('jump', true);
-      setTimeout(() => bot.setControlState('jump', false), 500);
-    }
-  }, 5000);
-
-  // Periodic chat
-  setInterval(() => {
-    const msg = config.chatMessage || "I'm still active!";
-    bot.chat(msg);
-    log(`[Chat] ${msg}`);
-  }, 60000);
-
-  if (Array.isArray(config.chatMessages)) {
-    setInterval(() => {
-      config.chatMessages.forEach((msg, i) => {
-        setTimeout(() => {
-          bot.chat(msg);
-          log(`[Chat] ${msg}`);
-        }, i * 3000);
-      });
-    }, 60000);
+    chestWindow.close();
+    return true;
   }
 
-  // Exit house with door logic
-  function exitHouse() {
-    const doorBlock = bot.findBlock({
-      matching: block => block.name.includes('door'),
-      maxDistance: 10
-    });
-
-    if (!doorBlock) {
-      log('[Door] No door found nearby.');
-      roamInsideHouse();
-      return;
+  // Craft bread if enough wheat
+  async function craftBread() {
+    const wheatCount = bot.inventory.count(mcData.itemsByName.wheat.id);
+    if (wheatCount >= 3) {
+      await bot.pathfinder.goto(new GoalBlock(craftingTablePos.x, craftingTablePos.y, craftingTablePos.z));
+      const tableBlock = bot.blockAt(craftingTablePos);
+      if (!tableBlock) {
+        log('[Craft] Crafting table not found.');
+        return;
+      }
+      const recipe = bot.recipesFor(mcData.itemsByName.bread.id, null, 1, tableBlock)[0];
+      if (!recipe) {
+        log('[Craft] No bread recipe found.');
+        return;
+      }
+      try {
+        await bot.craft(recipe, Math.floor(wheatCount / 3), tableBlock);
+        log('[Craft] Crafted bread.');
+      } catch (err) {
+        log(`[Craft] Crafting failed: ${err.message}`);
+      }
     }
-
-    const doorPos = doorBlock.position;
-    const isOpen = doorBlock.metadata & 0x4;
-
-    if (!isOpen) {
-      bot.activateBlock(doorBlock);
-      log(`[Door] Opened door at ${doorPos}`);
-    }
-
-    const dirVec = bot.entity.position.minus(doorPos).normalize();
-    const exitPos = doorPos.plus(dirVec.scaled(2)).floored();
-    const goal = new GoalNear(exitPos.x, exitPos.y, exitPos.z, 1);
-    bot.pathfinder.setGoal(goal);
-
-    bot.once('goal_reached', () => {
-      log(`[Move] Exited house through the door at ${doorPos}`);
-      setTimeout(() => {
-        bot.activateBlock(doorBlock);
-        log(`[Door] Closed door at ${doorPos}`);
-        setTimeout(roamInsideHouse, 3000);
-      }, 1000);
-    });
   }
 
-  setTimeout(exitHouse, 15000);
+  // Farm logic: till, harvest, replant
+  async function tillAndReplant() {
+    for (let x = farmMin.x; x <= farmMax.x; x++) {
+      for (let z = farmMin.z; z <= farmMax.z; z++) {
+        const pos = new Vec3(x, 71, z);
+        const block = bot.blockAt(pos);
+        const above = bot.blockAt(pos.offset(0, 1, 0));
+        if (!block) continue;
 
-  // Watchdog for missed keep-alives
-  setInterval(() => {
-    const now = Date.now();
-    if (now - lastKeepAliveTime > keepAliveTimeout) {
-      log(`[Warning] Missed keep-alive for ${now - lastKeepAliveTime} ms. Restarting bot...`);
-      bot.quit();
+        if (block.name === 'dirt') {
+          // Need hoe to till
+          let hoe = bot.inventory.items().find(i => i.name.includes('hoe'));
+          if (!hoe) {
+            const gotHoe = await getItem('hoe', 1);
+            if (!gotHoe) continue;
+            hoe = bot.inventory.items().find(i => i.name.includes('hoe'));
+          }
+          await bot.equip(hoe, 'hand');
+          await bot.pathfinder.goto(new GoalBlock(pos.x, pos.y, pos.z));
+          try {
+            await bot.activateBlock(block);
+            log(`[Farm] Tilled dirt at ${pos}`);
+          } catch (err) {
+            log(`[Farm] Failed to till at ${pos}: ${err.message}`);
+          }
+        } else if (block.name === 'farmland') {
+          if (!above) continue;
+
+          if (above.name.includes('wheat')) {
+            // Wheat crop
+            const age = above.properties?.age;
+            if (age === 7) {
+              // Fully grown wheat, harvest
+              try {
+                await bot.dig(above);
+                log(`[Farm] Harvested wheat at ${pos}`);
+
+                // Replant seeds
+                let seeds = bot.inventory.items().find(i => i.name.includes('seeds'));
+                if (!seeds) {
+                  const gotSeeds = await getItem('seeds', 5);
+                  if (!gotSeeds) continue;
+                  seeds = bot.inventory.items().find(i => i.name.includes('seeds'));
+                }
+                await bot.equip(seeds, 'hand');
+                await bot.placeBlock(block, new Vec3(0, 1, 0));
+                log(`[Farm] Replanted wheat at ${pos}`);
+              } catch (err) {
+                log(`[Farm] Failed wheat harvest/plant at ${pos}: ${err.message}`);
+              }
+            }
+          } else if (above.name.includes('potatoes')) {
+            const age = above.properties?.age;
+            if (age === 7) {
+              // Fully grown potatoes, harvest
+              try {
+                await bot.dig(above);
+                log(`[Farm] Harvested potato at ${pos}`);
+
+                // Replant potatoes
+                let potato = bot.inventory.items().find(i => i.name.includes('potato'));
+                if (!potato) {
+                  const gotPotato = await getItem('potato', 5);
+                  if (!gotPotato) continue;
+                  potato = bot.inventory.items().find(i => i.name.includes('potato'));
+                }
+                await bot.equip(potato, 'hand');
+                await bot.placeBlock(block, new Vec3(0, 1, 0));
+                log(`[Farm] Replanted potato at ${pos}`);
+              } catch (err) {
+                log(`[Farm] Failed potato harvest/plant at ${pos}: ${err.message}`);
+              }
+            }
+          }
+        }
+      }
     }
-  }, 5000);
-});
+  }
 
-// Reconnect logic
-bot.on('error', err => log(`[Error] ${err.message}`));
-bot.on('end', () => {
-  log(`[Disconnected] Bot disconnected. Reconnecting in 10 seconds...`);
-  setTimeout(() => {
-    require('child_process').spawn(process.argv[0], process.argv.slice(1), {
-      stdio: 'inherit'
-    });
-  }, 10000);
-});
+  // Circular patrol around house center (6x6 area)
+  let patrolIndex = 0;
+  const patrolPoints = [
+    new Vec3(houseCenter
+
