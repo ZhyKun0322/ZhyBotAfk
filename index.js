@@ -43,9 +43,8 @@ const craftingTablePos = new Vec3(-1242, 72, -450);
 const bedArea = { min: new Vec3(-1246, 72, -450), max: new Vec3(-1241, 72, -445) };
 const farmMin = new Vec3(-1233, 71, -449);
 const farmMax = new Vec3(-1216, 71, -440);
-const doorPos = new Vec3(-1247, 72, -453); // your real door
+const doorPos = new Vec3(-1247, 72, -453);
 
-// Patrol points (6x6 circle)
 const patrolPoints = [];
 for (let dx = -3; dx <= 3; dx++) {
   for (let dz = -3; dz <= 3; dz++) {
@@ -55,26 +54,32 @@ for (let dx = -3; dx <= 3; dx++) {
   }
 }
 let patrolIndex = 0;
+let isEating = false;
 
 bot.once('spawn', () => {
   mcData = require('minecraft-data')(bot.version);
   const defaultMove = new Movements(bot, mcData);
-  defaultMove.canDig = false; // prevent breaking blocks
+  defaultMove.canDig = false;
   bot.pathfinder.setMovements(defaultMove);
   log(`[Bot] Spawned.`);
 
-  bot.on('physicTick', eatWhenHungry);
+  bot.on('physicsTick', eatWhenHungry); // updated from deprecated physicTick
   roamLoop();
   setInterval(farmAndCraftLoop, 30000);
 });
 
 // Eat if hungry
 function eatWhenHungry() {
-  if (bot.food < 18) {
-    const food = bot.inventory.items().find(i => i.name.includes('bread') || i.name.includes('potato'));
-    if (food) {
-      bot.equip(food, 'hand').then(() => bot.consume()).then(() => log('[Eat] Ate food.'));
-    }
+  if (isEating || bot.food >= 18) return;
+
+  const food = bot.inventory.items().find(i => i.name.includes('bread') || i.name.includes('potato'));
+  if (food) {
+    isEating = true;
+    bot.equip(food, 'hand')
+      .then(() => bot.consume())
+      .then(() => log('[Eat] Ate food.'))
+      .catch(err => log(`[Eat] Failed: ${err.message}`))
+      .finally(() => isEating = false);
   }
 }
 
@@ -112,7 +117,7 @@ async function closeDoorIfOpen() {
   }
 }
 
-// Roaming + patrol loop
+// Roaming and patrol
 async function roamLoop() {
   const time = bot.time.timeOfDay;
   if (time >= 13000 && time <= 23458) {
@@ -122,9 +127,16 @@ async function roamLoop() {
       await openDoorIfClosed();
       const goal = patrolPoints[patrolIndex];
       patrolIndex = (patrolIndex + 1) % patrolPoints.length;
-      await bot.pathfinder.goto(new GoalBlock(goal.x, goal.y, goal.z));
+
+      const goalBlock = new GoalBlock(goal.x, goal.y, goal.z);
+
+      await Promise.race([
+        bot.pathfinder.goto(goalBlock),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout: goal unreachable')), 10000))
+      ]);
+
       log(`[Patrol] Walking to ${goal}`);
-      await closeDoorIfOpen(); // Close door after moving
+      await closeDoorIfOpen();
     } catch (err) {
       log(`[Path] Failed to walk: ${err.message}`);
     }
@@ -132,7 +144,7 @@ async function roamLoop() {
   }
 }
 
-// Sleep in bed inside house
+// Sleep at night
 async function goToBed() {
   const bed = bot.findBlock({
     matching: block => mcData.blocksByName.bed && block.name.includes('bed'),
@@ -181,7 +193,7 @@ async function getItem(name, amount) {
   return true;
 }
 
-// Craft bread
+// Craft bread from wheat
 async function craftBread() {
   const wheatCount = bot.inventory.count(mcData.itemsByName.wheat.id);
   if (wheatCount < 3) return;
@@ -194,7 +206,7 @@ async function craftBread() {
   }
 }
 
-// Farm loop
+// Farm and replant
 async function farmAndCraftLoop() {
   for (let x = farmMin.x; x <= farmMax.x; x++) {
     for (let z = farmMin.z; z <= farmMax.z; z++) {
