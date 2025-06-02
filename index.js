@@ -125,13 +125,11 @@ async function dailyRoutineLoop() {
 async function roamLoop() {
   if (sleeping) return;
 
-  const center = new Vec3(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z);
-  const radius = 5;
   const points = [
-    center.offset(-radius, 0, 0),
-    center.offset(radius, 0, 0),
-    center.offset(0, 0, -radius),
-    center.offset(0, 0, radius)
+    new Vec3(-1246, 72, -448),
+    new Vec3(-1244, 72, -448),
+    new Vec3(-1246, 72, -450),
+    new Vec3(-1244, 72, -450)
   ];
 
   try {
