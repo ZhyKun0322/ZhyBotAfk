@@ -21,9 +21,13 @@ function log(msg) {
   fs.appendFileSync('logs.txt', message + '\n');
 }
 
-// Error and disconnect handling
-bot._client.on('error', err => log(`[Client Error] ${err.message}`));
-bot._client.on('close', () => log(`[Client] Connection closed.`));
+// Catch client errors
+bot._client.on('error', err => {
+  log(`[Client Error] ${err.message}`);
+});
+bot._client.on('close', () => {
+  log(`[Client] Connection closed.`);
+});
 
 // Auto register/login
 bot.on('message', (jsonMsg) => {
@@ -47,6 +51,7 @@ bot.once('spawn', () => {
   const houseCenter = new Vec3(-1244, 72, -448);
   const houseSize = 11;
 
+  // Async scan for walkable points with yielding to avoid blocking event loop
   async function getRandomWalkablePoint() {
     const half = Math.floor(houseSize / 2);
     const candidates = [];
@@ -54,9 +59,7 @@ bot.once('spawn', () => {
     for (let x = houseCenter.x - half; x <= houseCenter.x + half; x++) {
       for (let z = houseCenter.z - half; z <= houseCenter.z + half; z++) {
         for (let y = houseCenter.y - 1; y <= houseCenter.y + 5; y++) {
-          if (candidates.length > 0 && candidates.length % 100 === 0) {
-            await new Promise(r => setTimeout(r, 0));
-          }
+          if (candidates.length > 0 && candidates.length % 100 === 0) await new Promise(r => setTimeout(r, 0));
 
           const pos = new Vec3(x, y, z);
           const blockBelow = bot.blockAt(pos.offset(0, -1, 0));
@@ -74,9 +77,8 @@ bot.once('spawn', () => {
       }
     }
 
-    return candidates.length > 0
-      ? candidates[Math.floor(Math.random() * candidates.length)]
-      : houseCenter;
+    if (candidates.length === 0) return houseCenter;
+    return candidates[Math.floor(Math.random() * candidates.length)];
   }
 
   async function roamInsideHouse() {
@@ -89,7 +91,7 @@ bot.once('spawn', () => {
     const onGoalReached = () => {
       log(`[Move] Reached (${goal.x}, ${goal.y}, ${goal.z}), roaming again soon...`);
       bot.pathfinder.setGoal(null);
-      setTimeout(roamInsideHouse, 3000);
+      setTimeout(() => roamInsideHouse(), 3000);
       bot.removeListener('goal_reached', onGoalReached);
     };
 
@@ -98,13 +100,17 @@ bot.once('spawn', () => {
 
   roamInsideHouse();
 
-  bot.dig = async () => log(`[Block] Digging prevented.`);
-  bot.on('diggingCompleted', block => {
+  // Prevent block breaking
+  bot.dig = async () => {
+    log(`[Block] Digging prevented.`);
+  };
+
+  bot.on('diggingCompleted', (block) => {
     log(`[Block] Prevented breaking at ${block.position}`);
     bot.stopDigging();
   });
 
-  // Auto sleep
+  // Auto sleep at night
   setInterval(() => {
     if (bot.isSleeping) return;
     const time = bot.time.timeOfDay;
@@ -123,13 +129,11 @@ bot.once('spawn', () => {
     }
   }, 5000);
 
-  // Auto eat
+  // Auto eat when hungry
   setInterval(() => {
     if (bot.food < 18) {
       const food = bot.inventory.items().find(item =>
-        item.name.includes('bread') ||
-        item.name.includes('cooked') ||
-        item.name.includes('apple')
+        item.name.includes('bread') || item.name.includes('cooked') || item.name.includes('apple')
       );
       if (food) {
         bot.equip(food, 'hand')
@@ -140,15 +144,7 @@ bot.once('spawn', () => {
     }
   }, 5000);
 
-  // Periodic jumping
-  setInterval(() => {
-    if (bot.entity.onGround) {
-      bot.setControlState('jump', true);
-      setTimeout(() => bot.setControlState('jump', false), 500);
-    }
-  }, 5000);
-
-  // Periodic chat
+  // Chat every 60s
   setInterval(() => {
     const msg = config.chatMessage || "I'm still active!";
     bot.chat(msg);
@@ -166,7 +162,7 @@ bot.once('spawn', () => {
     }, 60000);
   }
 
-  // Exit house with door logic
+  // Exit house using door and resume roaming
   function exitHouse() {
     const doorBlock = bot.findBlock({
       matching: block => block.name.includes('door'),
@@ -189,6 +185,7 @@ bot.once('spawn', () => {
 
     const dirVec = bot.entity.position.minus(doorPos).normalize();
     const exitPos = doorPos.plus(dirVec.scaled(2)).floored();
+
     const goal = new GoalNear(exitPos.x, exitPos.y, exitPos.z, 1);
     bot.pathfinder.setGoal(goal);
 
@@ -202,10 +199,12 @@ bot.once('spawn', () => {
     });
   }
 
-  setTimeout(exitHouse, 15000);
+  setTimeout(() => {
+    exitHouse();
+  }, 15000);
 });
 
-// Reconnect logic
+// Reconnect on crash or disconnect
 bot.on('error', err => log(`[Error] ${err.message}`));
 bot.on('end', () => {
   log(`[Disconnected] Bot disconnected. Reconnecting in 10 seconds...`);
