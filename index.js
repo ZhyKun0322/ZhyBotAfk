@@ -15,6 +15,21 @@ let isEating = false;
 const chatAnnounceEnabled = config.chatAnnouncements?.enable ?? false;
 const farmingMessage = config.chatAnnouncements?.farmingMessage || "Farming now!";
 
+// Helper to open the door at config.door position
+async function openDoorAt(pos) {
+  const doorBlock = bot.blockAt(new Vec3(pos.x, pos.y, pos.z));
+  if (doorBlock && doorBlock.name.includes('door')) {
+    if (doorBlock.properties.open === 'false') {
+      try {
+        await bot.activateBlock(doorBlock);
+        console.log(`Opened door at ${pos.x},${pos.y},${pos.z}`);
+      } catch (err) {
+        console.error('Failed to open door:', err);
+      }
+    }
+  }
+}
+
 function createBot() {
   bot = mineflayer.createBot({
     host: config.host,
@@ -53,6 +68,7 @@ function createBot() {
     mcData = mcDataLib(bot.version);
     defaultMove = new Movements(bot, mcData);
     defaultMove.canDig = false;
+    defaultMove.allow1by1tallDoors = true;  // Enable door handling in pathfinder
     bot.pathfinder.setMovements(defaultMove);
 
     bot.on('physicsTick', eatWhenHungry);
@@ -73,8 +89,10 @@ function createBot() {
       } else if (currentDay !== lastDay) {
         lastDay = currentDay;
         if (currentDay % 2 === 0) {
-          roamLoop();
+          await roamLoop();
         } else {
+          // Open door before going to walk center
+          await openDoorAt(config.door);
           await bot.pathfinder.goto(new GoalBlock(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z));
           if (chatAnnounceEnabled) {
             bot.chat(farmingMessage);
@@ -91,6 +109,7 @@ function createBot() {
     setTimeout(dailyRoutineLoop, 5000);
   }
 
+  // Updated roamLoop to open door before moving through
   async function roamLoop() {
     if (sleeping) return;
     const center = new Vec3(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z);
@@ -105,6 +124,9 @@ function createBot() {
     try {
       const goal = points[patrolIndex];
       patrolIndex = (patrolIndex + 1) % points.length;
+
+      // Open door before going to next patrol point
+      await openDoorAt(config.door);
       await bot.pathfinder.goto(new GoalBlock(goal.x, goal.y, goal.z));
     } catch (err) {
       console.error('Error in roamLoop:', err);
@@ -138,6 +160,8 @@ function createBot() {
       return;
     }
     try {
+      // Open door before going to bed (in case door is between bot and bed)
+      await openDoorAt(config.door);
       await bot.pathfinder.goto(new GoalBlock(bed.position.x, bed.position.y, bed.position.z));
       await bot.sleep(bed);
       sleeping = true;
@@ -201,6 +225,8 @@ function createBot() {
     }
 
     try {
+      // Open door before crafting table
+      await openDoorAt(config.door);
       await bot.pathfinder.goto(new GoalBlock(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z));
       const recipe = bot.recipesFor(mcData.itemsByName.bread.id, null, 1, craftingTable)[0];
       if (recipe) {
@@ -219,6 +245,8 @@ function createBot() {
     }
 
     try {
+      // Open door before chest
+      await openDoorAt(config.door);
       const chestWindow = await bot.openContainer(chest);
       const keepNames = ['bread', 'seeds', 'potato', 'carrot', 'hoe'];
 
@@ -237,6 +265,8 @@ function createBot() {
     if (!chest) return false;
 
     try {
+      // Open door before chest
+      await openDoorAt(config.door);
       const chestWindow = await bot.openContainer(chest);
       const item = chestWindow.containerItems().find(i => i.name.includes(name));
       if (!item) {
@@ -269,6 +299,8 @@ function createBot() {
     }
 
     try {
+      // Open door before furnace
+      await openDoorAt(config.door);
       const furnaceWindow = await bot.openContainer(furnace);
       const fuelNames = ['coal', 'charcoal', 'log', 'planks'];
       const smeltableNames = ['raw_', 'ore'];
