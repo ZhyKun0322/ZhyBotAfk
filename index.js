@@ -12,7 +12,7 @@ let sleeping = false;
 let lastDay = -1;
 let patrolIndex = 0;
 let isEating = false;
-let alreadyLoggedIn = false; // ✅ added flag
+let alreadyLoggedIn = false;
 
 const chatAnnounceEnabled = config.chatAnnouncements?.enable ?? false;
 const farmingMessage = config.chatAnnouncements?.farmingMessage || "Farming now!";
@@ -65,7 +65,7 @@ function cleanupAndReconnect() {
   sleeping = false;
   lastDay = -1;
   patrolIndex = 0;
-  alreadyLoggedIn = false; // ✅ reset flag on reconnect
+  alreadyLoggedIn = false;
   setTimeout(createBot, 5000);
 }
 
@@ -90,12 +90,38 @@ async function onBotReady() {
 
 async function openDoorAt(pos) {
   const doorBlock = bot.blockAt(new Vec3(pos.x, pos.y, pos.z));
-  if (doorBlock && doorBlock.name.includes('door') && doorBlock.properties.open === false) {
+  if (!doorBlock || !doorBlock.name.includes('door')) {
+    console.log(`🚪 Door not found at (${pos.x}, ${pos.y}, ${pos.z})`);
+    return;
+  }
+
+  if (!doorBlock.properties.open) {
     try {
       await bot.activateBlock(doorBlock);
       log(`Opened door at ${pos.x},${pos.y},${pos.z}`);
     } catch (err) {
       console.error('Failed to open door:', err);
+      return;
+    }
+  }
+
+  let passedThrough = false;
+  for (let i = 0; i < 40; i++) {
+    const dist = bot.entity.position.distanceTo(doorBlock.position);
+    if (dist < 1.5) {
+      passedThrough = true;
+      break;
+    }
+    await bot.waitForTicks(5);
+  }
+
+  const doorBlockNow = bot.blockAt(new Vec3(pos.x, pos.y, pos.z));
+  if (passedThrough && doorBlockNow?.properties.open) {
+    try {
+      await bot.activateBlock(doorBlockNow);
+      log(`Closed door at ${pos.x},${pos.y},${pos.z}`);
+    } catch (err) {
+      console.error('Failed to close door:', err);
     }
   }
 }
@@ -115,11 +141,16 @@ async function dailyRoutineLoop() {
         await roamLoop();
       } else {
         await openDoorAt(config.door);
-        await bot.pathfinder.goto(new GoalBlock(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z));
+        await bot.pathfinder.goto(new GoalBlock(config.farmMin.x, config.farmMin.y, config.farmMin.z));
+
         if (chatAnnounceEnabled) bot.chat(farmingMessage);
         await farmCrops();
         await craftBread();
         await storeExcessItems();
+
+        // ✅ Go back inside after farming
+        await openDoorAt(config.door);
+        await bot.pathfinder.goto(new GoalBlock(config.walkCenter.x, config.walkCenter.y, config.walkCenter.z));
       }
     }
   } catch (err) {
@@ -134,13 +165,12 @@ async function roamLoop() {
 
   const center = config.walkCenter;
 
-  // Random position inside 11x11 area on X and Z
   const offsetX = Math.floor(Math.random() * 11) - 5;
   const offsetZ = Math.floor(Math.random() * 11) - 5;
 
   const targetX = center.x + offsetX;
   const targetZ = center.z + offsetZ;
-  const targetY = center.y; // stay on same floor level
+  const targetY = center.y;
 
   try {
     await openDoorAt(config.door);
@@ -175,7 +205,7 @@ function eatWhenHungry() {
 
 async function goToBed() {
   if (sleeping) return;
-  const bed = bot.findBlock({ matching: block => block.name.endsWith('_bed'), maxDistance: 16 });
+  const bed = bot.findBlock({ matching: block => block.name.endsWith('_bed'), maxDistance: 64 });
   if (!bed) return console.log('No bed found nearby.');
 
   try {
@@ -292,5 +322,4 @@ async function getItemFromChest(name, amount) {
   }
 }
 
-// Start the bot
 createBot();
