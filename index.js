@@ -142,9 +142,9 @@ async function roamLoop() {
     await bot.pathfinder.goto(new GoalBlock(goal.x, goal.y, goal.z));
   } catch (err) {
     console.error('Error in roamLoop:', err);
+  } finally {
+    setTimeout(roamLoop, 5000);
   }
-
-  setTimeout(roamLoop, 5000);
 }
 
 function eatWhenHungry() {
