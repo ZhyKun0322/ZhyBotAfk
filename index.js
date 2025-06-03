@@ -1,5 +1,5 @@
 const mineflayer = require('mineflayer');
-const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathfinder');
+const { pathfinder, Movements, goals: { GoalBlock, GoalNear } } = require('mineflayer-pathfinder');
 const Vec3 = require('vec3');
 const mcDataLoader = require('minecraft-data');
 const fs = require('fs');
@@ -85,7 +85,13 @@ function eatIfHungry() {
   if (food) {
     isEating = true;
     bot.equip(food, 'hand')
-      .then(() => bot.consume())
+      .then(() => {
+        bot.activateItem(); // replaces bot.consume()
+        return new Promise(r => setTimeout(r, 1600)); // wait to simulate eating
+      })
+      .catch(err => {
+        log(`Eating error: ${err.message}`);
+      })
       .finally(() => isEating = false);
   }
 }
@@ -148,8 +154,7 @@ async function searchFoodInChests() {
       // Check for food in chest slots
       const foodItem = chest.containerItems().find(item => item && mcData.items[item.type].food);
       if (foodItem) {
-        // Withdraw food from chest to inventory (up to 1 stack or amount bot can carry)
-        const toWithdraw = Math.min(foodItem.count, foodItem.type); // Just withdraw what’s available
+        const toWithdraw = foodItem.count;  // Fixed this line: withdraw all food count, not type
         await chest.withdraw(foodItem.type, null, toWithdraw);
         log(`Withdrew ${toWithdraw} of ${mcData.items[foodItem.type].name} from chest.`);
       }
@@ -164,25 +169,25 @@ async function searchFoodInChests() {
 async function houseRoamRoutine() {
   log('Roaming inside house.');
   bot.chat(config.chatAnnouncements.houseMessage);
-  const houseCenter = config.houseCenter;
-  const houseBounds = { x: 5, z: 5 }; // Adjust these values for house dimensions
 
-  // Randomly pick a spot inside the house within bounds
-  const offsetX = Math.floor(Math.random() * (houseBounds.x * 2 + 1)) - houseBounds.x;
-  const offsetZ = Math.floor(Math.random() * (houseBounds.z * 2 + 1)) - houseBounds.z;
+  const center = config.houseCenter;
+  const radius = config.houseRadius || 5; // fallback to 5 if not defined
 
-  const target = new Vec3(houseCenter.x + offsetX, houseCenter.y, houseCenter.z + offsetZ);
+  for (let i = 0; i < 5; i++) {
+    if (sleeping) return;
 
-  // Log and move to the random position
-  log(`Target roaming position: (${target.x}, ${target.y}, ${target.z})`);
-  await goTo(target);
+    const offsetX = Math.floor(Math.random() * (radius * 2 + 1)) - radius;
+    const offsetZ = Math.floor(Math.random() * (radius * 2 + 1)) - radius;
+    const target = new Vec3(center.x + offsetX, center.y, center.z + offsetZ);
+
+    await goTo(target);
+    await new Promise(r => setTimeout(r, 3000));
+  }
 }
 
 async function goTo(pos) {
   try {
-    log(`Navigating to position (${pos.x}, ${pos.y}, ${pos.z})`);
     await bot.pathfinder.goto(new GoalNear(pos.x, pos.y, pos.z, 1));
-    log(`Arrived at position (${pos.x}, ${pos.y}, ${pos.z})`);
   } catch (e) {
     log(`Failed to path to (${pos.x}, ${pos.y}, ${pos.z}): ${e.message}`);
   }
