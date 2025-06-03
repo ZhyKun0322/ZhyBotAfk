@@ -141,19 +141,17 @@ async function harvestAndReplant() {
       const crop = bot.blockAt(new Vec3(x, y + 1, z));
       const soil = bot.blockAt(new Vec3(x, y, z));
 
-      if (
-        crop &&
-        crop.properties &&
-        typeof crop.properties.age !== 'undefined' &&
-        crop.properties.age === 7 &&
-        soil &&
-        soil.name === 'farmland'
-      ) {
-        try {
-          await bot.dig(crop);
-          await replant(soil);
-        } catch (e) {
-          log(`Crop error at (${x},${y + 1},${z}): ${e.message}`);
+      if (crop && soil && soil.name === 'farmland') {
+        const ageProp = crop.properties.age;
+        const maxAge = mcData.blocks[crop.type].states.find(s => s.name === 'age')?.values.length - 1;
+
+        if (ageProp !== undefined && ageProp === maxAge) {
+          try {
+            await bot.dig(crop);
+            await replant(soil);
+          } catch (e) {
+            log(`Crop error at (${x},${y + 1},${z}): ${e.message}`);
+          }
         }
       }
     }
