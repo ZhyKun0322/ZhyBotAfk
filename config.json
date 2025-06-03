@@ -2,19 +2,17 @@
   "host": "KingdomOfYggdrasil.aternos.me",
   "port": 52364,
   "username": "ZhyBot3",
-  "password": "ZhyBot22",
   "version": "1.19.2",
-  "doorPositions": [
-    { "x": -1248, "y": 72, "z": -455 },
-    { "x": -1249, "y": 72, "z": -455 }
-  ],
-  "chestPositions": [
-    { "x": -1241, "y": 72, "z": -444 },
-    { "x": -1242, "y": 72, "z": -444 }
-  ],
+  "password": "ZhyBot22",
   "searchRange": 16,
+  "entrance": { "x": -1286, "y": 73, "z": -417 },
+  "houseCenter": { "x": -1286, "y": 73, "z": -417 },
+  "houseRadius": 5,
+  "chestPositions": [
+    { "x": -1280, "y": 72, "z": -420 },
+    { "x": -1282, "y": 72, "z": -419 }
+  ],
   "chatAnnouncements": {
-    "farmingMessage": "Farming crops...",
-    "houseMessage": "Roaming inside the house..."
+    "houseMessage": "Roaming inside my house!"
   }
 }
