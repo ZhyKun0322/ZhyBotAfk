@@ -5,8 +5,7 @@
   "version": "1.19.2",
   "password": "ZhyBot22",
   "searchRange": 16,
-  "entrance": { "x": -1286, "y": 73, "z": -417 },
-  "houseCenter": { "x": -1286, "y": 73, "z": -417 },
+  "houseCenter": { "x": -1244, "y": 72, "z": -448 },
   "houseRadius": 5,
   "chestPositions": [
     { "x": -1280, "y": 72, "z": -420 },
