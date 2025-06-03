@@ -20,6 +20,7 @@ function log(msg) {
 }
 
 function createBot() {
+  log('Creating bot...');
   bot = mineflayer.createBot({
     host: config.host,
     port: config.port,
@@ -30,30 +31,44 @@ function createBot() {
 
   bot.loadPlugin(pathfinder);
 
+  bot.once('login', () => {
+    log('Bot logged in to the server.');
+  });
+
   bot.once('spawn', () => {
+    log('Bot has spawned in the world.');
+
     mcData = mcDataLoader(bot.version);
     defaultMove = new Movements(bot, mcData);
     defaultMove.allow1by1tallDoors = true;
     bot.pathfinder.setMovements(defaultMove);
+
     bot.on('chat', onChat);
     bot.on('physicsTick', eatIfHungry);
     runDailyLoop();
   });
 
   bot.on('message', msg => {
-    if (alreadyLoggedIn) return;
     const text = msg.toString().toLowerCase();
+    log(`Server Message: ${text}`);
+    if (alreadyLoggedIn) return;
     if (text.includes('register')) {
       bot.chat(`/register ${config.password} ${config.password}`);
       alreadyLoggedIn = true;
+      log('Sent register command.');
     } else if (text.includes('login')) {
       bot.chat(`/login ${config.password}`);
       alreadyLoggedIn = true;
+      log('Sent login command.');
     }
   });
 
-  bot.on('end', () => setTimeout(createBot, 5000));
+  bot.on('kicked', reason => log(`[KICKED] ${reason}`));
   bot.on('error', err => log(`[ERROR] ${err.message}`));
+  bot.on('end', () => {
+    log('Bot disconnected. Reconnecting in 5 seconds...');
+    setTimeout(createBot, 5000);
+  });
 }
 
 function onChat(username, message) {
