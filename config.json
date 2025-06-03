@@ -11,6 +11,18 @@
     "z": -449
   },
 
+  "house": {
+    "corners": [
+      { "x": -1250, "y": 72, "z": -454 },
+      { "x": -1240, "y": 72, "z": -454 },
+      { "x": -1240, "y": 72, "z": -444 },
+      { "x": -1250, "y": 72, "z": -444 }
+    ],
+    "entrance": { "x": -1248, "y": 72, "z": -455 },
+    "exit": { "x": -1248, "y": 72, "z": -453 },
+    "bedSearchRadius": 10
+  },
+
   "farmMin": {
     "x": -1233,
     "y": 71,
@@ -22,13 +34,23 @@
     "z": -440
   },
 
-  "houseSize": {
-    "width": 11,
-    "height": 15,
-    "depth": 11
+  "chestSearchRadius": 16,
+  "craftingTableSearchRadius": 16,
+
+  "farming": {
+    "enabled": true,
+    "crops": ["wheat", "carrots", "potatoes"]
   },
 
-  "searchRange": 16,
+  "inventory": {
+    "keepFood": {
+      "enabled": true,
+      "type": "carrot",
+      "amount": 10
+    },
+    "toolsNeeded": ["wooden_hoe", "stone_hoe", "iron_hoe", "golden_hoe", "diamond_hoe", "netherite_hoe"],
+    "seeds": ["wheat_seeds", "carrot", "potato"]
+  },
 
   "chatAnnouncements": {
     "enable": true,
