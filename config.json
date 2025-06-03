@@ -4,56 +4,22 @@
   "username": "ZhyBot3",
   "password": "ZhyBot22",
   "version": "1.19.2",
-
-  "walkCenter": {
-    "x": -1245,
-    "y": 72,
-    "z": -449
-  },
-
-  "house": {
-    "corners": [
-      { "x": -1250, "y": 72, "z": -454 },
-      { "x": -1240, "y": 72, "z": -454 },
-      { "x": -1240, "y": 72, "z": -444 },
-      { "x": -1250, "y": 72, "z": -444 }
-    ],
-    "entrance": { "x": -1248, "y": 72, "z": -455 },
-    "exit": { "x": -1248, "y": 72, "z": -453 },
-    "bedSearchRadius": 10
-  },
-
-  "farmMin": {
-    "x": -1233,
-    "y": 71,
-    "z": -449
-  },
-  "farmMax": {
-    "x": -1216,
-    "y": 71,
-    "z": -440
-  },
-
-  "chestSearchRadius": 16,
-  "craftingTableSearchRadius": 16,
-
-  "farming": {
-    "enabled": true,
-    "crops": ["wheat", "carrots", "potatoes"]
-  },
-
-  "inventory": {
-    "keepFood": {
-      "enabled": true,
-      "type": "carrot",
-      "amount": 10
-    },
-    "toolsNeeded": ["wooden_hoe", "stone_hoe", "iron_hoe", "golden_hoe", "diamond_hoe", "netherite_hoe"],
-    "seeds": ["wheat_seeds", "carrot", "potato"]
-  },
-
+  "farmMin": { "x": -1260, "y": 72, "z": -460 },
+  "farmMax": { "x": -1240, "y": 72, "z": -440 },
+  "houseCenter": { "x": -1244, "y": 72, "z": -448 },
+  "entrance": { "x": -1248, "y": 72, "z": -455 },
+  "exit": { "x": -1248, "y": 72, "z": -453 },
+  "doorPositions": [
+    { "x": -1248, "y": 72, "z": -455 },
+    { "x": -1249, "y": 72, "z": -455 }
+  ],
+  "chestPositions": [
+    { "x": -1241, "y": 72, "z": -444 },
+    { "x": -1242, "y": 72, "z": -444 }
+  ],
+  "searchRange": 16,
   "chatAnnouncements": {
-    "enable": true,
-    "farmingMessage": "Farming now!"
+    "farmingMessage": "[ZhyBot] Farming crops...",
+    "houseMessage": "[ZhyBot] Roaming inside the house..."
   }
 }
