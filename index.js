@@ -36,10 +36,10 @@ function createBot() {
 
   bot.once('spawn', () => {
     log('Bot has spawned in the world.');
-
     mcData = mcDataLoader(bot.version);
     defaultMove = new Movements(bot, mcData);
     defaultMove.allow1by1tallDoors = true;
+    defaultMove.canDig = false; // 🚫 Prevent breaking blocks
     bot.pathfinder.setMovements(defaultMove);
 
     bot.on('chat', onChat);
@@ -55,11 +55,9 @@ function createBot() {
     if (text.includes('register')) {
       bot.chat(`/register ${config.password} ${config.password}`);
       alreadyLoggedIn = true;
-      log('Sent register command.');
     } else if (text.includes('login')) {
       bot.chat(`/login ${config.password}`);
       alreadyLoggedIn = true;
-      log('Sent login command.');
     }
   });
 
@@ -73,10 +71,22 @@ function createBot() {
 
 function onChat(username, message) {
   if (username === bot.username) return;
-  if (message === '!stop') isRunning = false;
-  if (message === '!start') isRunning = true;
-  if (message === '!sleep') sleepRoutine();
-  if (message === '!roam') houseRoamRoutine();
+  if (message === '!stop') {
+    isRunning = false;
+    bot.chat("Bot paused.");
+  }
+  if (message === '!start') {
+    isRunning = true;
+    bot.chat("Bot resumed.");
+  }
+  if (message === '!sleep') {
+    bot.chat("Trying to sleep...");
+    sleepRoutine();
+  }
+  if (message === '!roam') {
+    bot.chat("Roaming inside the house...");
+    houseRoamRoutine();
+  }
 }
 
 function eatIfHungry() {
@@ -85,13 +95,8 @@ function eatIfHungry() {
   if (food) {
     isEating = true;
     bot.equip(food, 'hand')
-      .then(() => {
-        bot.activateItem();
-        return new Promise(r => setTimeout(r, 1600));
-      })
-      .catch(err => {
-        log(`Eating error: ${err.message}`);
-      })
+      .then(() => bot.consume())
+      .catch(err => log(`Error eating: ${err.message}`))
       .finally(() => isEating = false);
   }
 }
@@ -99,7 +104,7 @@ function eatIfHungry() {
 async function runLoop() {
   while (true) {
     if (!isRunning || sleeping) {
-      await new Promise(r => setTimeout(r, 3000));
+      await delay(3000);
       continue;
     }
 
@@ -112,53 +117,58 @@ async function runLoop() {
       await houseRoamRoutine();
     }
 
-    await new Promise(r => setTimeout(r, 5000));
+    await delay(5000);
   }
 }
 
 async function sleepRoutine() {
+  if (sleeping) return;
   const bed = bot.findBlock({
     matching: b => bot.isABed(b),
     maxDistance: config.searchRange
   });
+
   if (!bed) {
-    log('No bed found within search range.');
+    log('No bed found nearby.');
     return;
   }
-  log('Trying to sleep...');
+
+  log(`Heading to bed at ${bed.position}`);
   try {
     await goTo(config.entrance);
     await goTo(bed.position);
     await bot.sleep(bed);
     sleeping = true;
+    bot.chat("Sleeping now...");
+    log('Sleeping...');
+
     bot.once('wake', () => {
-      log('Woke up!');
       sleeping = false;
+      bot.chat("Woke up!");
+      log('Woke up from sleep.');
     });
   } catch (e) {
     log(`Sleep failed: ${e.message}`);
+    bot.chat(`Sleep failed: ${e.message}`);
   }
 }
 
 async function searchFoodInChests() {
   for (let chestPos of config.chestPositions) {
-    const chestBlock = bot.blockAt(new Vec3(chestPos.x, chestPos.y, chestPos.z));
-    if (!chestBlock) continue;
+    const block = bot.blockAt(new Vec3(chestPos.x, chestPos.y, chestPos.z));
+    if (!block) continue;
 
     try {
-      const chest = await bot.openContainer(chestBlock);
-      log(`Opened chest at ${chestPos.x}, ${chestPos.y}, ${chestPos.z}`);
-
-      const foodItem = chest.containerItems().find(item => item && mcData.items[item.type].food);
-      if (foodItem) {
-        const toWithdraw = Math.min(foodItem.count, foodItem.type);
-        await chest.withdraw(foodItem.type, null, toWithdraw);
-        log(`Withdrew ${toWithdraw} of ${mcData.items[foodItem.type].name} from chest.`);
+      const chest = await bot.openContainer(block);
+      const food = chest.containerItems().find(i => i && mcData.items[i.type].food);
+      if (food) {
+        const toWithdraw = Math.min(food.count, food.type);
+        await chest.withdraw(food.type, null, toWithdraw);
+        log(`Withdrew ${toWithdraw} of ${mcData.items[food.type].name}`);
       }
-
       chest.close();
     } catch (e) {
-      log(`Failed to open chest or withdraw food: ${e.message}`);
+      log(`Chest error: ${e.message}`);
     }
   }
 }
@@ -166,15 +176,15 @@ async function searchFoodInChests() {
 async function houseRoamRoutine() {
   log('Roaming inside house.');
   bot.chat(config.chatAnnouncements.houseMessage);
-  const bounds = config.houseRadius;
+  const radius = config.houseRadius;
 
   for (let i = 0; i < 5; i++) {
     if (sleeping) return;
-    const offsetX = Math.floor(Math.random() * (bounds * 2 + 1)) - bounds;
-    const offsetZ = Math.floor(Math.random() * (bounds * 2 + 1)) - bounds;
-    const target = new Vec3(config.houseCenter.x + offsetX, config.houseCenter.y, config.houseCenter.z + offsetZ);
+    const dx = Math.floor(Math.random() * (radius * 2 + 1)) - radius;
+    const dz = Math.floor(Math.random() * (radius * 2 + 1)) - radius;
+    const target = new Vec3(config.houseCenter.x + dx, config.houseCenter.y, config.houseCenter.z + dz);
     await goTo(target);
-    await new Promise(r => setTimeout(r, 3000));
+    await delay(3000);
   }
 }
 
@@ -182,8 +192,12 @@ async function goTo(pos) {
   try {
     await bot.pathfinder.goto(new GoalNear(pos.x, pos.y, pos.z, 1));
   } catch (e) {
-    log(`Failed to path to (${pos.x}, ${pos.y}, ${pos.z}): ${e.message}`);
+    log(`Navigation error: ${e.message}`);
   }
+}
+
+function delay(ms) {
+  return new Promise(r => setTimeout(r, ms));
 }
 
 createBot();
