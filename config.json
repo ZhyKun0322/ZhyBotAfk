@@ -17,7 +17,7 @@
     { "x": -1241, "y": 72, "z": -444 },
     { "x": -1242, "y": 72, "z": -444 }
   ],
-  "searchRange": 16,
+  "searchRange": 11,
   "chatAnnouncements": {
     "farmingMessage": "[ZhyBot] Farming crops...",
     "houseMessage": "[ZhyBot] Roaming inside the house..."
