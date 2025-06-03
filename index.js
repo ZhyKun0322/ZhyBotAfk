@@ -1,4 +1,3 @@
-// index.js
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals: { GoalBlock } } = require('mineflayer-pathfinder');
 const Vec3 = require('vec3');
@@ -11,6 +10,7 @@ let sleeping = false;
 let lastDay = -1;
 let isRunning = true;
 let isEating = false;
+let alreadyLoggedIn = false;
 
 function log(msg) {
   const time = new Date().toISOString();
@@ -38,6 +38,18 @@ function createBot() {
     bot.on('chat', onChat);
     bot.on('physicsTick', eatIfHungry);
     runDailyLoop();
+  });
+
+  bot.on('message', msg => {
+    if (alreadyLoggedIn) return;
+    const text = msg.toString().toLowerCase();
+    if (text.includes('register')) {
+      bot.chat(`/register ${config.password} ${config.password}`);
+      alreadyLoggedIn = true;
+    } else if (text.includes('login')) {
+      bot.chat(`/login ${config.password}`);
+      alreadyLoggedIn = true;
+    }
   });
 
   bot.on('end', () => setTimeout(createBot, 5000));
@@ -91,10 +103,13 @@ async function runDailyLoop() {
 
 async function sleepRoutine() {
   const bed = bot.findBlock({
-    matching: b => b.name.endsWith('_bed'),
+    matching: b => bot.isABed(b),
     maxDistance: config.searchRange
   });
-  if (!bed) return;
+  if (!bed) {
+    log('No bed found within search range.');
+    return;
+  }
   log('Trying to sleep...');
   try {
     await goTo(config.entrance);
@@ -125,7 +140,15 @@ async function harvestAndReplant() {
       const y = config.farmMin.y;
       const crop = bot.blockAt(new Vec3(x, y + 1, z));
       const soil = bot.blockAt(new Vec3(x, y, z));
-      if (crop && crop.properties.age === 9 && soil.name === 'farmland') {
+
+      if (
+        crop &&
+        crop.properties &&
+        typeof crop.properties.age !== 'undefined' &&
+        crop.properties.age === 9 &&
+        soil &&
+        soil.name === 'farmland'
+      ) {
         try {
           await bot.dig(crop);
           await replant(soil);
