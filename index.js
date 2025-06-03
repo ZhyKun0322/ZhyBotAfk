@@ -145,7 +145,7 @@ async function harvestAndReplant() {
         crop &&
         crop.properties &&
         typeof crop.properties.age !== 'undefined' &&
-        crop.properties.age === 9 &&
+        crop.properties.age === 7 &&
         soil &&
         soil.name === 'farmland'
       ) {
