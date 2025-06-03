@@ -1,5 +1,4 @@
-// Updated index.js with chat commands, auto farming, storing, roaming, door logic, and sleep
-
+// Revised index.js for detailed bot routine control, no Discord integration
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals: { GoalBlock } } = require('mineflayer-pathfinder');
 const Vec3 = require('vec3');
@@ -16,13 +15,14 @@ let routineRunning = false;
 let isEating = false;
 let isRoaming = false;
 let alreadyLoggedIn = false;
-let currentTask = 'Idle';
+let currentTask = null;
 
 function log(msg) {
   const time = new Date().toISOString();
   const line = `[${time}] ${msg}`;
   console.log(line);
   fs.appendFileSync('logs.txt', line + '\n');
+  bot.chat(`[Log] ${msg}`);
 }
 
 function createBot() {
@@ -40,49 +40,39 @@ function createBot() {
   bot.on('error', err => console.error('[ERROR]', err));
   bot.on('end', () => setTimeout(createBot, 5000));
 
-  bot.on('message', async msg => {
-    if (!alreadyLoggedIn) {
-      const text = msg.toString().toLowerCase();
-      if (text.includes('register')) {
-        bot.chat(`/register ${config.password} ${config.password}`);
-        alreadyLoggedIn = true;
-      } else if (text.includes('login')) {
-        bot.chat(`/login ${config.password}`);
-        alreadyLoggedIn = true;
-      }
+  bot.on('message', msg => {
+    const text = msg.toString().toLowerCase();
+    if (!alreadyLoggedIn && text.includes('register')) {
+      bot.chat(`/register ${config.password} ${config.password}`);
+      alreadyLoggedIn = true;
+    } else if (!alreadyLoggedIn && text.includes('login')) {
+      bot.chat(`/login ${config.password}`);
+      alreadyLoggedIn = true;
     }
 
-    const username = msg.username;
-    const content = msg.toString();
-    if (!username || username === bot.username) return;
-
-    // Command handler
-    switch (content.trim()) {
-      case '!status':
-        bot.chat(`[ZhyBot] Current task: ${currentTask}`);
-        break;
-      case '!sleep':
-        await sleepRoutine();
-        break;
-      case '!farm':
-        await farmRoutine();
-        break;
-      case '!roam':
-        await houseRoamRoutine();
-        break;
-      case '!store':
-        await storeCrops();
-        break;
-      case '!come':
-        const player = bot.players[username]?.entity;
-        if (player) await goTo(player.position);
-        break;
-      case '!stop':
-        bot.pathfinder.setGoal(null);
-        currentTask = 'Idle';
-        break;
+    if (text.includes('!stop')) {
+      cancelAll();
+      log('Bot stopped.');
+    } else if (text.includes('!farm')) {
+      cancelAll();
+      farmRoutine();
+    } else if (text.includes('!roam')) {
+      cancelAll();
+      houseRoamRoutine();
+    } else if (text.includes('!sleep')) {
+      cancelAll();
+      sleepRoutine();
     }
   });
+}
+
+function cancelAll() {
+  if (!bot) return;
+  bot.clearControlStates();
+  bot.pathfinder.setGoal(null);
+  isRoaming = false;
+  sleeping = false;
+  currentTask = null;
 }
 
 function onSpawn() {
@@ -91,6 +81,7 @@ function onSpawn() {
   defaultMove.allow1by1tallDoors = true;
   bot.pathfinder.setMovements(defaultMove);
   bot.on('physicsTick', eatIfHungry);
+
   if (!routineRunning) {
     routineRunning = true;
     dailyRoutineLoop();
@@ -126,37 +117,24 @@ async function dailyRoutineLoop() {
   setTimeout(dailyRoutineLoop, 5000);
 }
 
-async function openAndCloseDoors() {
-  for (const doorPos of config.doorPositions) {
-    const doorBlock = bot.blockAt(new Vec3(doorPos.x, doorPos.y, doorPos.z));
-    if (doorBlock && bot.openBlock) {
-      try {
-        await bot.activateBlock(doorBlock);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      } catch (e) { }
-    }
-  }
-}
-
 async function farmRoutine() {
-  currentTask = 'Farming';
-  log('[Farm Routine] Starting');
+  log('Starting farm routine');
   bot.chat(config.chatAnnouncements.farmingMessage);
   await goTo(config.exit);
-  await openAndCloseDoors();
   await goTo(config.farmMin);
   await farmCrops();
   await goTo(config.entrance);
-  await openAndCloseDoors();
+  await goTo(config.houseCenter);
+  await storeCrops();
 }
 
 async function houseRoamRoutine() {
-  currentTask = 'Roaming';
+  log('Starting roam routine');
   if (isRoaming) return;
-  isRoaming = true;
   bot.chat(config.chatAnnouncements.houseMessage);
+  isRoaming = true;
   const roam = async () => {
-    if (sleeping) return;
+    if (!isRoaming || sleeping) return;
     const offsetX = Math.floor(Math.random() * 11) - 5;
     const offsetZ = Math.floor(Math.random() * 11) - 5;
     const pos = new Vec3(config.houseCenter.x + offsetX, config.houseCenter.y, config.houseCenter.z + offsetZ);
@@ -167,50 +145,38 @@ async function houseRoamRoutine() {
 }
 
 async function sleepRoutine() {
+  log('Attempting to sleep');
   const bed = bot.findBlock({ matching: b => b.name.endsWith('_bed'), maxDistance: config.searchRange });
   if (!bed) return;
-  currentTask = 'Sleeping';
   await goTo(config.entrance);
-  await openAndCloseDoors();
   await goTo(bed.position);
   try {
     await bot.sleep(bed);
     sleeping = true;
+    bot.chat('[ZhyBot] Sleeping...');
     bot.once('wake', async () => {
       sleeping = false;
-      currentTask = 'Idle';
       bot.chat('[ZhyBot] Woke up!');
-      await postSleepActions();
     });
   } catch (err) {
-    log('[Sleep Error] ' + err.message);
-  }
-}
-
-async function postSleepActions() {
-  const currentDay = Math.floor(bot.time.age / 24000);
-  if (currentDay % 2 === 1) {
-    await storeCrops();
+    log('Sleep error: ' + err.message);
   }
 }
 
 async function storeCrops() {
-  currentTask = 'Storing';
   for (let chestPos of config.chestPositions) {
     const chestBlock = bot.blockAt(new Vec3(chestPos.x, chestPos.y, chestPos.z));
     if (!chestBlock) continue;
     try {
-      await goTo(chestBlock.position);
-      const chest = await bot.openContainer(chestBlock);
+      const chestWindow = await bot.openContainer(chestBlock);
       for (let item of bot.inventory.items()) {
-        if (['wheat', 'seeds', 'potato'].includes(item.name)) {
-          await chest.deposit(item.type, null, item.count);
+        if (['wheat', 'carrot', 'potato'].includes(item.name)) {
+          await chestWindow.deposit(item.type, null, item.count);
         }
       }
-      chest.close();
-      break;
-    } catch (e) {
-      log('[Store Error] ' + e.message);
+      chestWindow.close();
+    } catch (err) {
+      log('Error storing to chest: ' + err.message);
     }
   }
 }
@@ -223,29 +189,32 @@ async function farmCrops() {
       const soil = bot.blockAt(new Vec3(x, min.y, z));
       const crop = bot.blockAt(new Vec3(x, min.y + 1, z));
       if (!soil || soil.name !== 'farmland' || !crop) continue;
-      if ((['wheat', 'carrots', 'potatoes'].includes(crop.name)) && crop.metadata === 9) {
+      if (crop.properties.age === 9) {
         try {
           await bot.dig(crop);
-          await replantCrop(soil, crop.name);
-        } catch (e) { }
+          await replantCrop(soil);
+        } catch {}
       }
     }
   }
 }
 
-async function replantCrop(soil, crop) {
-  let itemName = crop.includes('carrot') ? 'carrot' : crop.includes('potato') ? 'potato' : 'seeds';
-  const item = bot.inventory.items().find(i => i.name.includes(itemName));
-  if (!item) return;
-  await bot.equip(item, 'hand');
-  await bot.placeBlock(soil, new Vec3(0, 1, 0));
+async function replantCrop(soil) {
+  const seeds = bot.inventory.items().find(i => i.name.includes('seeds'));
+  if (!seeds) return;
+  try {
+    await bot.equip(seeds, 'hand');
+    await bot.placeBlock(soil, new Vec3(0, 1, 0));
+  } catch (err) {
+    log('Replant failed: ' + err.message);
+  }
 }
 
 async function goTo(pos) {
   try {
     await bot.pathfinder.goto(new GoalBlock(pos.x, pos.y, pos.z));
   } catch (err) {
-    log('[GoTo Error] ' + err.message);
+    log('Path error: ' + err.message);
   }
 }
 
