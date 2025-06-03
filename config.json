@@ -8,8 +8,8 @@
   "houseCenter": { "x": -1244, "y": 72, "z": -448 },
   "houseRadius": 5,
   "chestPositions": [
-    { "x": -1280, "y": 72, "z": -420 },
-    { "x": -1282, "y": 72, "z": -419 }
+    { "x": -1241, "y": 72, "z": -443 },
+    { "x": -1240, "y": 72, "z": -443 }
   ],
   "chatAnnouncements": {
     "houseMessage": "Roaming inside my house!"
