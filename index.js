@@ -11,12 +11,6 @@ let isRunning = true;
 let isEating = false;
 let alreadyLoggedIn = false;
 
-const edibleItems = [
-  'bread', 'cooked_beef', 'cooked_chicken', 'cooked_porkchop', 'carrot',
-  'baked_potato', 'apple', 'cooked_mutton', 'cooked_cod', 'cooked_salmon',
-  'sweet_berries', 'melon_slice', 'pumpkin_pie'
-];
-
 function log(msg) {
   const time = new Date().toISOString();
   const fullMsg = `[${time}] ${msg}`;
@@ -42,6 +36,7 @@ function createBot() {
 
   bot.once('spawn', () => {
     log('Bot has spawned in the world.');
+
     mcData = mcDataLoader(bot.version);
     defaultMove = new Movements(bot, mcData);
     defaultMove.allow1by1tallDoors = true;
@@ -74,14 +69,6 @@ function createBot() {
     log('Bot disconnected. Reconnecting in 5 seconds...');
     setTimeout(createBot, 5000);
   });
-
-  // Prevent breaking blocks by disabling digging
-  bot.on('blockUpdate', () => {
-    if (bot.targetDigBlock) {
-      bot.clearControlStates();
-      log('Blocked attempt to dig.');
-    }
-  });
 }
 
 function onChat(username, message) {
@@ -94,13 +81,11 @@ function onChat(username, message) {
 
 function eatIfHungry() {
   if (isEating || bot.food >= 18) return;
-  const food = bot.inventory.items().find(i => edibleItems.includes(i.name));
+  const food = bot.inventory.items().find(i => mcData.items[i.type].food);
   if (food) {
     isEating = true;
     bot.equip(food, 'hand')
       .then(() => bot.consume())
-      .then(() => log(`Ate ${food.name}`))
-      .catch(e => log(`Failed to eat: ${e.message}`))
       .finally(() => isEating = false);
   }
 }
@@ -114,9 +99,11 @@ async function runLoop() {
 
     const dayTime = bot.time.dayTime;
 
+    // Sleep at night (dayTime 13000 to 23458)
     if (dayTime >= 13000 && dayTime <= 23458) {
       await sleepRoutine();
     } else {
+      // Daytime: search for food in chests, eat, and roam inside house
       await searchFoodInChests();
       await houseRoamRoutine();
     }
@@ -134,7 +121,6 @@ async function sleepRoutine() {
     log('No bed found within search range.');
     return;
   }
-
   log('Trying to sleep...');
   try {
     await goTo(config.entrance);
@@ -157,13 +143,15 @@ async function searchFoodInChests() {
 
     try {
       const chest = await bot.openContainer(chestBlock);
-      log(`Opened chest at (${chestPos.x}, ${chestPos.y}, ${chestPos.z})`);
+      log(`Opened chest at ${chestPos.x}, ${chestPos.y}, ${chestPos.z}`);
 
-      const foodItem = chest.containerItems().find(item => item && edibleItems.includes(item.name));
+      // Check for food in chest slots
+      const foodItem = chest.containerItems().find(item => item && mcData.items[item.type].food);
       if (foodItem) {
-        const toWithdraw = Math.min(foodItem.count, 16);
+        // Withdraw food from chest to inventory (up to 1 stack or amount bot can carry)
+        const toWithdraw = Math.min(foodItem.count, foodItem.type); // Just withdraw what’s available
         await chest.withdraw(foodItem.type, null, toWithdraw);
-        log(`Withdrew ${toWithdraw} ${foodItem.name}`);
+        log(`Withdrew ${toWithdraw} of ${mcData.items[foodItem.type].name} from chest.`);
       }
 
       chest.close();
@@ -176,24 +164,25 @@ async function searchFoodInChests() {
 async function houseRoamRoutine() {
   log('Roaming inside house.');
   bot.chat(config.chatAnnouncements.houseMessage);
-  const bounds = { x: 5, z: 5 };
-  for (let i = 0; i < 5; i++) {
-    if (sleeping) return;
-    const offsetX = Math.floor(Math.random() * (bounds.x * 2 + 1)) - bounds.x;
-    const offsetZ = Math.floor(Math.random() * (bounds.z * 2 + 1)) - bounds.z;
-    const target = new Vec3(
-      config.houseCenter.x + offsetX,
-      config.houseCenter.y,
-      config.houseCenter.z + offsetZ
-    );
-    await goTo(target);
-    await new Promise(r => setTimeout(r, 3000));
-  }
+  const houseCenter = config.houseCenter;
+  const houseBounds = { x: 5, z: 5 }; // Adjust these values for house dimensions
+
+  // Randomly pick a spot inside the house within bounds
+  const offsetX = Math.floor(Math.random() * (houseBounds.x * 2 + 1)) - houseBounds.x;
+  const offsetZ = Math.floor(Math.random() * (houseBounds.z * 2 + 1)) - houseBounds.z;
+
+  const target = new Vec3(houseCenter.x + offsetX, houseCenter.y, houseCenter.z + offsetZ);
+
+  // Log and move to the random position
+  log(`Target roaming position: (${target.x}, ${target.y}, ${target.z})`);
+  await goTo(target);
 }
 
 async function goTo(pos) {
   try {
+    log(`Navigating to position (${pos.x}, ${pos.y}, ${pos.z})`);
     await bot.pathfinder.goto(new GoalNear(pos.x, pos.y, pos.z, 1));
+    log(`Arrived at position (${pos.x}, ${pos.y}, ${pos.z})`);
   } catch (e) {
     log(`Failed to path to (${pos.x}, ${pos.y}, ${pos.z}): ${e.message}`);
   }
