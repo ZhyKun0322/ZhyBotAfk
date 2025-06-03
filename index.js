@@ -1,5 +1,5 @@
 const mineflayer = require('mineflayer');
-const { pathfinder, Movements, goals: { GoalBlock } } = require('mineflayer-pathfinder');
+const { pathfinder, Movements, goals: { GoalBlock, GoalNear } } = require('mineflayer-pathfinder');
 const Vec3 = require('vec3');
 const mcDataLoader = require('minecraft-data');
 const fs = require('fs');
@@ -7,7 +7,6 @@ const config = require('./config.json');
 
 let bot, mcData, defaultMove;
 let sleeping = false;
-let lastDay = -1;
 let isRunning = true;
 let isEating = false;
 let alreadyLoggedIn = false;
@@ -45,7 +44,8 @@ function createBot() {
 
     bot.on('chat', onChat);
     bot.on('physicsTick', eatIfHungry);
-    runDailyLoop();
+
+    runLoop();
   });
 
   bot.on('message', msg => {
@@ -75,7 +75,6 @@ function onChat(username, message) {
   if (username === bot.username) return;
   if (message === '!stop') isRunning = false;
   if (message === '!start') isRunning = true;
-  if (message === '!farm') farmRoutine();
   if (message === '!sleep') sleepRoutine();
   if (message === '!roam') houseRoamRoutine();
 }
@@ -91,7 +90,7 @@ function eatIfHungry() {
   }
 }
 
-async function runDailyLoop() {
+async function runLoop() {
   while (true) {
     if (!isRunning || sleeping) {
       await new Promise(r => setTimeout(r, 3000));
@@ -99,17 +98,14 @@ async function runDailyLoop() {
     }
 
     const dayTime = bot.time.dayTime;
-    const currentDay = Math.floor(bot.time.age / 24000);
 
+    // Sleep at night (dayTime 13000 to 23458)
     if (dayTime >= 13000 && dayTime <= 23458) {
       await sleepRoutine();
-    } else if (currentDay !== lastDay) {
-      lastDay = currentDay;
-      if (currentDay % 2 === 1) {
-        await farmRoutine();
-      } else {
-        await houseRoamRoutine();
-      }
+    } else {
+      // Daytime: search for food in chests, eat, and roam inside house
+      await searchFoodInChests();
+      await houseRoamRoutine();
     }
 
     await new Promise(r => setTimeout(r, 5000));
@@ -140,61 +136,27 @@ async function sleepRoutine() {
   }
 }
 
-async function farmRoutine() {
-  log('Farming routine started.');
-  bot.chat(config.chatAnnouncements.farmingMessage);
-  await goTo(config.exit);
-  await harvestAndReplant();
-  await goTo(config.entrance);
-  await storeItems();
-}
-
-async function harvestAndReplant() {
-  for (let x = config.farmMin.x; x <= config.farmMax.x; x++) {
-    for (let z = config.farmMin.z; z <= config.farmMax.z; z++) {
-      const y = config.farmMin.y;
-      const crop = bot.blockAt(new Vec3(x, y + 1, z));
-      const soil = bot.blockAt(new Vec3(x, y, z));
-
-      if (crop && soil && soil.name === 'farmland') {
-        const ageProp = crop.properties.age;
-        const maxAge = mcData.blocks[crop.type].states.find(s => s.name === 'age')?.values.length - 1;
-
-        if (ageProp !== undefined && ageProp === maxAge) {
-          try {
-            await bot.dig(crop);
-            await replant(soil);
-          } catch (e) {
-            log(`Crop error at (${x},${y + 1},${z}): ${e.message}`);
-          }
-        }
-      }
-    }
-  }
-}
-
-async function replant(soil) {
-  const seeds = bot.inventory.items().find(i => i.name.includes('seeds'));
-  if (seeds) {
-    await bot.equip(seeds, 'hand');
-    await bot.placeBlock(soil, new Vec3(0, 1, 0));
-  }
-}
-
-async function storeItems() {
+async function searchFoodInChests() {
   for (let chestPos of config.chestPositions) {
     const chestBlock = bot.blockAt(new Vec3(chestPos.x, chestPos.y, chestPos.z));
-    if (!chestBlock || !bot.openContainer) continue;
+    if (!chestBlock) continue;
+
     try {
       const chest = await bot.openContainer(chestBlock);
-      for (let item of bot.inventory.items()) {
-        if (['wheat', 'seeds'].includes(item.name)) {
-          await chest.deposit(item.type, null, item.count);
-        }
+      log(`Opened chest at ${chestPos.x}, ${chestPos.y}, ${chestPos.z}`);
+
+      // Check for food in chest slots
+      const foodItem = chest.containerItems().find(item => item && mcData.items[item.type].food);
+      if (foodItem) {
+        // Withdraw food from chest to inventory (up to 1 stack or amount bot can carry)
+        const toWithdraw = Math.min(foodItem.count, foodItem.type); // Just withdraw what’s available
+        await chest.withdraw(foodItem.type, null, toWithdraw);
+        log(`Withdrew ${toWithdraw} of ${mcData.items[foodItem.type].name} from chest.`);
       }
+
       chest.close();
     } catch (e) {
-      log(`Failed to store items: ${e.message}`);
+      log(`Failed to open chest or withdraw food: ${e.message}`);
     }
   }
 }
@@ -215,7 +177,7 @@ async function houseRoamRoutine() {
 
 async function goTo(pos) {
   try {
-    await bot.pathfinder.goto(new GoalBlock(pos.x, pos.y, pos.z));
+    await bot.pathfinder.goto(new GoalNear(pos.x, pos.y, pos.z, 1));
   } catch (e) {
     log(`Failed to path to (${pos.x}, ${pos.y}, ${pos.z}): ${e.message}`);
   }
