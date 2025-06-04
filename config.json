@@ -13,5 +13,6 @@
   ],
   "chatAnnouncements": {
     "houseMessage": "Roaming inside my house!"
-  }
+  },
+  "entrance": { "x": -1247, "y": 72, "z": -453 }
 }
