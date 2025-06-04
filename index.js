@@ -1,7 +1,3 @@
-(r => setTimeout(r, ms));
-}
-
-createBot();
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathfinder');
 const Vec3 = require('vec3');
