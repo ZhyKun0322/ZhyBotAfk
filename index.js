@@ -1,3 +1,7 @@
+(r => setTimeout(r, ms));
+}
+
+createBot();
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathfinder');
 const Vec3 = require('vec3');
@@ -39,7 +43,7 @@ function createBot() {
     mcData = mcDataLoader(bot.version);
     defaultMove = new Movements(bot, mcData);
     defaultMove.allow1by1tallDoors = true;
-    defaultMove.canDig = false; // 🚫 Prevent breaking blocks
+    defaultMove.canDig = false;
     bot.pathfinder.setMovements(defaultMove);
 
     bot.on('chat', onChat);
@@ -71,6 +75,17 @@ function createBot() {
 
 function onChat(username, message) {
   if (username === bot.username) return;
+
+  if (message === '!sleep') {
+    // Allow everyone to use !sleep
+    bot.chat("Trying to sleep...");
+    sleepRoutine();
+    return;
+  }
+
+  // Restrict other commands to ZhyKun only
+  if (username !== 'ZhyKun') return;
+
   if (message === '!stop') {
     isRunning = false;
     bot.chat("Bot paused.");
@@ -79,10 +94,6 @@ function onChat(username, message) {
     isRunning = true;
     bot.chat("Bot resumed.");
   }
-  if (message === '!sleep') {
-    bot.chat("Trying to sleep...");
-    sleepRoutine();
-  }
   if (message === '!roam') {
     bot.chat("Roaming inside the house...");
     houseRoamRoutine();
@@ -90,15 +101,21 @@ function onChat(username, message) {
 }
 
 function eatIfHungry() {
-  if (isEating || bot.food >= 18) return;
-  const food = bot.inventory.items().find(i => mcData.items[i.type].food);
-  if (food) {
-    isEating = true;
-    bot.equip(food, 'hand')
-      .then(() => bot.consume())
-      .catch(err => log(`Error eating: ${err.message}`))
-      .finally(() => isEating = false);
-  }
+  if (isEating || bot.food === 20) return;
+
+  const foodItem = bot.inventory.items().find(item => {
+    const itemInfo = mcData.items[item.type];
+    return itemInfo && itemInfo.food;
+  });
+
+  if (!foodItem) return;
+
+  isEating = true;
+  bot.equip(foodItem, 'hand')
+    .then(() => bot.consume())
+    .then(() => log(`Bot ate ${mcData.items[foodItem.type].name}`))
+    .catch(err => log(`Error eating: ${err.message}`))
+    .finally(() => isEating = false);
 }
 
 async function runLoop() {
@@ -176,13 +193,21 @@ async function searchFoodInChests() {
 async function houseRoamRoutine() {
   log('Roaming inside house.');
   bot.chat(config.chatAnnouncements.houseMessage);
+
+  const center = config.houseCenter;
+  if (!center || typeof center.x !== 'number' || typeof center.y !== 'number' || typeof center.z !== 'number') {
+    log('Error: config.houseCenter is not defined properly.');
+    bot.chat('⚠️ Cannot roam, houseCenter not set in config!');
+    return;
+  }
+
   const radius = config.houseRadius;
 
   for (let i = 0; i < 5; i++) {
     if (sleeping) return;
     const dx = Math.floor(Math.random() * (radius * 2 + 1)) - radius;
     const dz = Math.floor(Math.random() * (radius * 2 + 1)) - radius;
-    const target = new Vec3(config.houseCenter.x + dx, config.houseCenter.y, config.houseCenter.z + dz);
+    const target = new Vec3(center.x + dx, center.y, center.z + dz);
     await goTo(target);
     await delay(3000);
   }
