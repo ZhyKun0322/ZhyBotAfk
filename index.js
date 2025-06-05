@@ -73,11 +73,13 @@ function onChat(username, message) {
   if (username === bot.username) return;
 
   if (message === '!sleep') {
+    // Allow everyone to use !sleep
     bot.chat("Trying to sleep...");
     sleepRoutine();
     return;
   }
 
+  // Restrict other commands to ZhyKun only
   if (username !== 'ZhyKun') return;
 
   if (message === '!stop') {
@@ -89,17 +91,8 @@ function onChat(username, message) {
     bot.chat("Bot resumed.");
   }
   if (message === '!roam') {
-    bot.chat("Wandering around...");
-    wanderRoutine();
-  }
-  if (message === '!come') {
-    const player = bot.players[username]?.entity;
-    if (player) {
-      bot.chat('Coming to you!');
-      goTo(player.position);
-    } else {
-      bot.chat('Cannot find you!');
-    }
+    bot.chat("Roaming inside the house...");
+    houseRoamRoutine();
   }
 }
 
@@ -133,7 +126,8 @@ async function runLoop() {
     if (dayTime >= 13000 && dayTime <= 23458) {
       await sleepRoutine();
     } else {
-      await wanderRoutine();
+      await searchFoodInChests();
+      await houseRoamRoutine();
     }
 
     await delay(5000);
@@ -154,6 +148,7 @@ async function sleepRoutine() {
 
   log(`Heading to bed at ${bed.position}`);
   try {
+    await goTo(config.entrance);
     await goTo(bed.position);
     await bot.sleep(bed);
     sleeping = true;
@@ -171,25 +166,46 @@ async function sleepRoutine() {
   }
 }
 
-async function wanderRoutine() {
-  log('Wandering randomly...');
+async function searchFoodInChests() {
+  for (let chestPos of config.chestPositions) {
+    const block = bot.blockAt(new Vec3(chestPos.x, chestPos.y, chestPos.z));
+    if (!block) continue;
+
+    try {
+      const chest = await bot.openContainer(block);
+      const food = chest.containerItems().find(i => i && mcData.items[i.type].food);
+      if (food) {
+        const toWithdraw = Math.min(food.count, food.type);
+        await chest.withdraw(food.type, null, toWithdraw);
+        log(`Withdrew ${toWithdraw} of ${mcData.items[food.type].name}`);
+      }
+      chest.close();
+    } catch (e) {
+      log(`Chest error: ${e.message}`);
+    }
+  }
+}
+
+async function houseRoamRoutine() {
+  log('Roaming inside house.');
+  bot.chat(config.chatAnnouncements.houseMessage);
+
+  const center = config.houseCenter;
+  if (!center || typeof center.x !== 'number' || typeof center.y !== 'number' || typeof center.z !== 'number') {
+    log('Error: config.houseCenter is not defined properly.');
+    bot.chat('⚠️ Cannot roam, houseCenter not set in config!');
+    return;
+  }
+
+  const radius = config.houseRadius;
+
   for (let i = 0; i < 5; i++) {
     if (sleeping) return;
-
-    const dx = Math.floor(Math.random() * 11) - 5;
-    const dz = Math.floor(Math.random() * 11) - 5;
-    const pos = bot.entity.position.offset(dx, 0, dz);
-
-    const ground = bot.blockAt(pos.offset(0, -1, 0));
-    const block = bot.blockAt(pos);
-
-    if (ground && block && ground.boundingBox === 'block' && block.boundingBox === 'empty') {
-      log(`Moving to ${pos}`);
-      await goTo(pos);
-      await delay(3000);
-    } else {
-      log(`Skipped unreachable position at ${pos}`);
-    }
+    const dx = Math.floor(Math.random() * (radius * 2 + 1)) - radius;
+    const dz = Math.floor(Math.random() * (radius * 2 + 1)) - radius;
+    const target = new Vec3(center.x + dx, center.y, center.z + dz);
+    await goTo(target);
+    await delay(3000);
   }
 }
 
