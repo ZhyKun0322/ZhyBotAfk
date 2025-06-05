@@ -4,11 +4,5 @@
   "username": "ZhyBot3",
   "version": "1.19.2",
   "password": "ZhyBot22",
-  "searchRange": 16,
-  "houseCenter": { "x": -1244, "y": 72, "z": -448 },
-  "houseRadius": 5,
-  "chatAnnouncements": {
-    "houseMessage": "Roaming inside my house!"
-  },
-  "entrance": { "x": -1247, "y": 72, "z": -453 }
+  "searchRange": 20,
 }
