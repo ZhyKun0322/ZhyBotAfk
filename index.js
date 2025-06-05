@@ -175,11 +175,21 @@ async function wanderRoutine() {
   log('Wandering randomly...');
   for (let i = 0; i < 5; i++) {
     if (sleeping) return;
+
     const dx = Math.floor(Math.random() * 11) - 5;
     const dz = Math.floor(Math.random() * 11) - 5;
     const pos = bot.entity.position.offset(dx, 0, dz);
-    await goTo(pos);
-    await delay(3000);
+
+    const ground = bot.blockAt(pos.offset(0, -1, 0));
+    const block = bot.blockAt(pos);
+
+    if (ground && block && ground.boundingBox === 'block' && block.boundingBox === 'empty') {
+      log(`Moving to ${pos}`);
+      await goTo(pos);
+      await delay(3000);
+    } else {
+      log(`Skipped unreachable position at ${pos}`);
+    }
   }
 }
 
