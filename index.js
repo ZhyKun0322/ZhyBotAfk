@@ -3,8 +3,8 @@ const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathf
 const Vec3 = require('vec3');
 const mcDataLoader = require('minecraft-data');
 const fs = require('fs');
-const config = require('./config.json');
 const https = require('https');
+const config = require('./config.json');
 
 let bot, mcData, defaultMove;
 let sleeping = false;
@@ -70,8 +70,6 @@ function createBot() {
   });
 }
 
-// ---------------- AI Functionality ----------------
-
 function askOpenRouter(question, callback) {
   const data = JSON.stringify({
     model: "openai/gpt-3.5-turbo",
@@ -97,25 +95,35 @@ function askOpenRouter(question, callback) {
     res.on('end', () => {
       try {
         const json = JSON.parse(body);
+
+        if (json.error) {
+          log(`OpenRouter error: ${JSON.stringify(json.error)}`);
+          callback("Sorry, I had trouble responding.");
+          return;
+        }
+
         const reply = json.choices?.[0]?.message?.content?.trim();
-        callback(reply || 'Sorry, no reply.');
+        if (reply) {
+          callback(reply);
+        } else {
+          log('No reply from OpenRouter: ' + body);
+          callback("Sorry, no reply.");
+        }
       } catch (err) {
-        log('OpenRouter parse error: ' + err);
-        callback('Failed to respond.');
+        log('Failed to parse OpenRouter reply: ' + err.message);
+        callback("Error parsing reply.");
       }
     });
   });
 
   req.on('error', error => {
-    log('OpenRouter error: ' + error);
-    callback('Failed to respond.');
+    log('OpenRouter request error: ' + error.message);
+    callback("Sorry, failed to connect.");
   });
 
   req.write(data);
   req.end();
 }
-
-// --------------- Chat Handler ----------------
 
 function onChat(username, message) {
   if (username === bot.username) return;
@@ -150,17 +158,17 @@ function onChat(username, message) {
     }
   }
 
-  // AI Response Trigger
+  // AI Chat trigger: "ZhyBot3 <question>"
   if (message.toLowerCase().startsWith('zhybot3 ')) {
-    const question = message.slice(8).trim();
+    const query = message.slice(8).trim();
+    if (!query) return;
+
     bot.chat("thinking...");
-    askOpenRouter(question, (response) => {
-      bot.chat(response);
+    askOpenRouter(query, reply => {
+      bot.chat(reply);
     });
   }
 }
-
-// --------------- Utilities ----------------
 
 function eatIfHungry() {
   if (isEating || bot.food === 20) return;
