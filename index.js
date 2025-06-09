@@ -3,7 +3,7 @@ const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathf
 const Vec3 = require('vec3');
 const mcDataLoader = require('minecraft-data');
 const fs = require('fs');
-const https = require('https');
+const fetch = require('node-fetch'); // Use node-fetch v2 for Termux compatibility
 const config = require('./config.json');
 
 let bot, mcData, defaultMove;
@@ -70,62 +70,38 @@ function createBot() {
   });
 }
 
-function askOpenRouter(question, callback) {
-  const data = JSON.stringify({
-    model: "openai/gpt-3.5-turbo",
-    messages: [{ role: "user", content: question }]
-  });
-
-  const options = {
-    hostname: 'openrouter.ai',
-    path: '/api/v1/chat/completions',
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${config.openrouter_api_key}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://github.com/yourname/zhybot3',
-      'X-Title': 'ZhyBot3-Termux',
-      'Content-Length': Buffer.byteLength(data)
-    }
-  };
-
-  const req = https.request(options, res => {
-    let body = '';
-    res.on('data', chunk => body += chunk);
-    res.on('end', () => {
-      try {
-        const json = JSON.parse(body);
-
-        if (json.error) {
-          log(`OpenRouter error: ${JSON.stringify(json.error)}`);
-          callback("Sorry, I had trouble responding.");
-          return;
-        }
-
-        const reply = json.choices?.[0]?.message?.content?.trim();
-        if (reply) {
-          callback(reply);
-        } else {
-          log('No reply from OpenRouter: ' + body);
-          callback("Sorry, no reply.");
-        }
-      } catch (err) {
-        log('Failed to parse OpenRouter reply: ' + err.message);
-        callback("Error parsing reply.");
-      }
+async function askOpenRouter(message) {
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.openrouter_api_key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-3.5-turbo",
+        messages: [{ role: "user", content: message }]
+      })
     });
-  });
 
-  req.on('error', error => {
-    log('OpenRouter request error: ' + error.message);
-    callback("Sorry, failed to connect.");
-  });
+    if (!response.ok) {
+      log(`OpenRouter API error status: ${response.status}`);
+      return null;
+    }
 
-  req.write(data);
-  req.end();
+    const data = await response.json();
+    if (data && data.choices && data.choices.length > 0) {
+      return data.choices[0].message.content.trim();
+    } else {
+      return null;
+    }
+  } catch (e) {
+    log(`OpenRouter error: ${e.message}`);
+    return null;
+  }
 }
 
-function onChat(username, message) {
+async function onChat(username, message) {
   if (username === bot.username) return;
 
   if (message === '!sleep') {
@@ -158,15 +134,16 @@ function onChat(username, message) {
     }
   }
 
-  // AI Chat trigger: "ZhyBot3 <question>"
+  // AI chat trigger: user says "zhybot3 <message>"
   if (message.toLowerCase().startsWith('zhybot3 ')) {
-    const query = message.slice(8).trim();
-    if (!query) return;
-
-    bot.chat("thinking...");
-    askOpenRouter(query, reply => {
+    const prompt = message.slice('zhybot3 '.length).trim();
+    bot.chat('thinking...');
+    const reply = await askOpenRouter(prompt);
+    if (reply) {
       bot.chat(reply);
-    });
+    } else {
+      bot.chat('Sorry, I had trouble responding.');
+    }
   }
 }
 
