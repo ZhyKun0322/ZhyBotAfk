@@ -4,9 +4,7 @@ const Vec3 = require('vec3');
 const mcDataLoader = require('minecraft-data');
 const fs = require('fs');
 const config = require('./config.json');
-
-// Fix fetch import for Node.js CommonJS environment
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+const https = require('https');
 
 let bot, mcData, defaultMove;
 let sleeping = false;
@@ -72,40 +70,54 @@ function createBot() {
   });
 }
 
-async function askOpenRouter(prompt) {
-  const apiKey = process.env.OPENROUTER_API_KEY || config.openrouter_api_key;
-  if (!apiKey) {
-    log('No OpenRouter API key provided!');
-    return null;
-  }
+// ---------------- AI Functionality ----------------
 
-  try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
+function askOpenRouter(question, callback) {
+  const data = JSON.stringify({
+    model: "openai/gpt-3.5-turbo",
+    messages: [{ role: "user", content: question }]
+  });
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(`OpenRouter error: ${response.status} ${response.statusText} - ${errorBody}`);
+  const options = {
+    hostname: 'openrouter.ai',
+    path: '/api/v1/chat/completions',
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${config.openrouter_api_key}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://github.com/yourname/zhybot3',
+      'X-Title': 'ZhyBot3-Termux',
+      'Content-Length': Buffer.byteLength(data)
     }
+  };
 
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || null;
-  } catch (error) {
-    log(error.message);
-    return null;
-  }
+  const req = https.request(options, res => {
+    let body = '';
+    res.on('data', chunk => body += chunk);
+    res.on('end', () => {
+      try {
+        const json = JSON.parse(body);
+        const reply = json.choices?.[0]?.message?.content?.trim();
+        callback(reply || 'Sorry, no reply.');
+      } catch (err) {
+        log('OpenRouter parse error: ' + err);
+        callback('Failed to respond.');
+      }
+    });
+  });
+
+  req.on('error', error => {
+    log('OpenRouter error: ' + error);
+    callback('Failed to respond.');
+  });
+
+  req.write(data);
+  req.end();
 }
 
-async function onChat(username, message) {
+// --------------- Chat Handler ----------------
+
+function onChat(username, message) {
   if (username === bot.username) return;
 
   if (message === '!sleep') {
@@ -138,18 +150,17 @@ async function onChat(username, message) {
     }
   }
 
-  // New: respond to "zhybot3 (message)" with AI
+  // AI Response Trigger
   if (message.toLowerCase().startsWith('zhybot3 ')) {
-    const prompt = message.substring(8).trim();
-    bot.chat('thinking...');
-    const response = await askOpenRouter(prompt);
-    if (response) {
+    const question = message.slice(8).trim();
+    bot.chat("thinking...");
+    askOpenRouter(question, (response) => {
       bot.chat(response);
-    } else {
-      bot.chat('failed to respond.');
-    }
+    });
   }
 }
+
+// --------------- Utilities ----------------
 
 function eatIfHungry() {
   if (isEating || bot.food === 20) return;
