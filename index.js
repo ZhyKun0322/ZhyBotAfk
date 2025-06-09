@@ -3,8 +3,10 @@ const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathf
 const Vec3 = require('vec3');
 const mcDataLoader = require('minecraft-data');
 const fs = require('fs');
-const fetch = require('node-fetch'); // NEW
 const config = require('./config.json');
+
+// Fix fetch import for Node.js CommonJS environment
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 let bot, mcData, defaultMove;
 let sleeping = false;
@@ -71,49 +73,44 @@ function createBot() {
 }
 
 async function askOpenRouter(prompt) {
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": "Bearer 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",
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: "mistralai/mistral-7b-instruct",
-      messages: [
-        { role: "system", content: "You are ZhyBot3, a helpful Minecraft NPC assistant." },
-        { role: "user", content: prompt }
-      ]
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(`OpenRouter error: ${response.status} ${await response.text()}`);
+  const apiKey = process.env.OPENROUTER_API_KEY || config.openrouter_api_key;
+  if (!apiKey) {
+    log('No OpenRouter API key provided!');
+    return null;
   }
 
-  const data = await response.json();
-  return data.choices[0].message.content;
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(`OpenRouter error: ${response.status} ${response.statusText} - ${errorBody}`);
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || null;
+  } catch (error) {
+    log(error.message);
+    return null;
+  }
 }
 
-function onChat(username, message) {
+async function onChat(username, message) {
   if (username === bot.username) return;
 
   if (message === '!sleep') {
     bot.chat("Trying to sleep...");
     sleepRoutine();
-    return;
-  }
-
-  if (message.startsWith("ZhyBot3 ")) {
-    const prompt = message.replace("ZhyBot3 ", "").trim();
-    bot.chat("Thinking...");
-
-    askOpenRouter(prompt).then(reply => {
-      bot.chat(reply.length > 256 ? reply.substring(0, 256) : reply);
-    }).catch(err => {
-      console.error("OpenRouter error:", err);
-      bot.chat("Failed to respond.");
-    });
-
     return;
   }
 
@@ -138,6 +135,18 @@ function onChat(username, message) {
       goTo(player.position);
     } else {
       bot.chat('Cannot find you!');
+    }
+  }
+
+  // New: respond to "zhybot3 (message)" with AI
+  if (message.toLowerCase().startsWith('zhybot3 ')) {
+    const prompt = message.substring(8).trim();
+    bot.chat('thinking...');
+    const response = await askOpenRouter(prompt);
+    if (response) {
+      bot.chat(response);
+    } else {
+      bot.chat('failed to respond.');
     }
   }
 }
