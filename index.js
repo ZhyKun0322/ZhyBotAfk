@@ -3,12 +3,15 @@ const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathf
 const Vec3 = require('vec3');
 const mcDataLoader = require('minecraft-data');
 const fs = require('fs');
-const config = require('./config.json');
+const { OpenAI } = require("openai");
+require("dotenv").config();
 
-// --- GPT Setup ---
-const { OpenAI } = require('openai');
-require('dotenv').config();
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1"
+});
+
+const config = require('./config.json');
 
 let bot, mcData, defaultMove;
 let sleeping = false;
@@ -74,7 +77,7 @@ function createBot() {
   });
 }
 
-async function onChat(username, message) {
+function onChat(username, message) {
   if (username === bot.username) return;
 
   if (message === '!sleep') {
@@ -107,23 +110,28 @@ async function onChat(username, message) {
     }
   }
 
-  // --- GPT AI Response for "ZhyBot3 [message]" ---
-  if (message.toLowerCase().startsWith("zhybot3")) {
-    const prompt = message.slice(8).trim(); // remove "ZhyBot3"
-    if (!prompt) return;
+  // ✅ ChatGPT-style AI response
+  if (message.toLowerCase().startsWith("zhybot3 ")) {
+    const userMsg = message.substring(8);
     bot.chat("Thinking...");
-    try {
-      const chatCompletion = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: [{ role: "user", content: prompt }]
-      });
-      const reply = chatCompletion.choices[0].message.content;
-      bot.chat(reply.slice(0, 256)); // limit to Minecraft chat length
-    } catch (err) {
-      console.error("GPT error:", err.message);
-      bot.chat("Error generating response.");
-    }
+    askAI(userMsg).then(response => {
+      bot.chat(response);
+    }).catch(err => {
+      bot.chat("Error: " + err.message);
+      log("AI Error: " + err.message);
+    });
   }
+}
+
+async function askAI(msg) {
+  const res = await openai.chat.completions.create({
+    model: "openrouter/mistralai/mistral-7b-instruct",
+    messages: [
+      { role: "system", content: "You are a helpful Minecraft assistant bot." },
+      { role: "user", content: msg }
+    ]
+  });
+  return res.choices[0].message.content.trim();
 }
 
 function eatIfHungry() {
