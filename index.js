@@ -1,15 +1,14 @@
-require('dotenv').config();
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathfinder');
 const Vec3 = require('vec3');
 const mcDataLoader = require('minecraft-data');
 const fs = require('fs');
-const { OpenAI } = require('openai');
 const config = require('./config.json');
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// --- GPT Setup ---
+const { OpenAI } = require('openai');
+require('dotenv').config();
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 let bot, mcData, defaultMove;
 let sleeping = false;
@@ -78,26 +77,6 @@ function createBot() {
 async function onChat(username, message) {
   if (username === bot.username) return;
 
-  // GPT chat trigger
-  if (message.toLowerCase().includes('zhybotafk')) {
-    bot.chat('Thinking...');
-    try {
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4',
-        messages: [
-          { role: 'system', content: 'You are a helpful and friendly Minecraft bot named ZhyBotAfk.' },
-          { role: 'user', content: message }
-        ]
-      });
-      const reply = response.choices[0].message.content;
-      bot.chat(reply.substring(0, 256)); // Minecraft chat limit
-    } catch (err) {
-      bot.chat("Can't think right now!");
-      log(`GPT error: ${err.message}`);
-    }
-    return;
-  }
-
   if (message === '!sleep') {
     bot.chat("Trying to sleep...");
     sleepRoutine();
@@ -125,6 +104,24 @@ async function onChat(username, message) {
       goTo(player.position);
     } else {
       bot.chat('Cannot find you!');
+    }
+  }
+
+  // --- GPT AI Response for "ZhyBot3 [message]" ---
+  if (message.toLowerCase().startsWith("zhybot3")) {
+    const prompt = message.slice(8).trim(); // remove "ZhyBot3"
+    if (!prompt) return;
+    bot.chat("Thinking...");
+    try {
+      const chatCompletion = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [{ role: "user", content: prompt }]
+      });
+      const reply = chatCompletion.choices[0].message.content;
+      bot.chat(reply.slice(0, 256)); // limit to Minecraft chat length
+    } catch (err) {
+      console.error("GPT error:", err.message);
+      bot.chat("Error generating response.");
     }
   }
 }
