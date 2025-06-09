@@ -3,11 +3,10 @@ const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathf
 const Vec3 = require('vec3');
 const mcDataLoader = require('minecraft-data');
 const fs = require('fs');
-const { OpenAI } = require("openai");
-require("dotenv").config();
+const { OpenAI } = require('openai');
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
+  apiKey: "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",
   baseURL: "https://openrouter.ai/api/v1"
 });
 
@@ -80,6 +79,28 @@ function createBot() {
 function onChat(username, message) {
   if (username === bot.username) return;
 
+  // Handle AI messages
+  if (message.startsWith("ZhyBot3 ")) {
+    const prompt = message.replace("ZhyBot3 ", "").trim();
+    bot.chat("Thinking...");
+
+    openai.chat.completions.create({
+      model: "mistralai/mistral-7b-instruct",
+      messages: [
+        { role: "system", content: "You are ZhyBot3, a helpful Minecraft NPC assistant." },
+        { role: "user", content: prompt }
+      ]
+    }).then(res => {
+      const reply = res.choices[0].message.content;
+      bot.chat(reply.length > 256 ? reply.substring(0, 256) : reply); // Minecraft chat limit
+    }).catch(err => {
+      console.error("OpenAI error:", err);
+      bot.chat("Something went wrong.");
+    });
+
+    return;
+  }
+
   if (message === '!sleep') {
     bot.chat("Trying to sleep...");
     sleepRoutine();
@@ -109,29 +130,6 @@ function onChat(username, message) {
       bot.chat('Cannot find you!');
     }
   }
-
-  // ✅ ChatGPT-style AI response
-  if (message.toLowerCase().startsWith("zhybot3 ")) {
-    const userMsg = message.substring(8);
-    bot.chat("Thinking...");
-    askAI(userMsg).then(response => {
-      bot.chat(response);
-    }).catch(err => {
-      bot.chat("Error: " + err.message);
-      log("AI Error: " + err.message);
-    });
-  }
-}
-
-async function askAI(msg) {
-  const res = await openai.chat.completions.create({
-    model: "openrouter/mistralai/mistral-7b-instruct",
-    messages: [
-      { role: "system", content: "You are a helpful Minecraft assistant bot." },
-      { role: "user", content: msg }
-    ]
-  });
-  return res.choices[0].message.content.trim();
 }
 
 function eatIfHungry() {
