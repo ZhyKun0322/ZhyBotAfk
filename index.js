@@ -3,8 +3,8 @@ const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathf
 const Vec3 = require('vec3');
 const mcDataLoader = require('minecraft-data');
 const fs = require('fs');
+const fetch = require('node-fetch');
 const config = require('./config.json');
-const fetch = require('node-fetch'); // For Hugging Face API requests
 
 let bot, mcData, defaultMove;
 let sleeping = false;
@@ -12,9 +12,6 @@ let isRunning = true;
 let isEating = false;
 let alreadyLoggedIn = false;
 
-const HF_API_KEY = process.env.HF_API_KEY;  // Ensure to set Hugging Face API key in Termux or config.json
-
-// Log function to print messages to console and write to a log file
 function log(msg) {
   const time = new Date().toISOString();
   const fullMsg = `[${time}] ${msg}`;
@@ -22,7 +19,6 @@ function log(msg) {
   fs.appendFileSync('logs.txt', fullMsg + '\n');
 }
 
-// Function to create and login the bot
 function createBot() {
   log('Creating bot...');
   bot = mineflayer.createBot({
@@ -74,8 +70,7 @@ function createBot() {
   });
 }
 
-// Function to handle chat input
-function onChat(username, message) {
+async function onChat(username, message) {
   if (username === bot.username) return;
 
   if (message === '#sleep') {
@@ -108,52 +103,40 @@ function onChat(username, message) {
     }
   }
 
-  if (message.startsWith('#ask')) {
-    const question = message.slice(4).trim();
-    if (question) {
-      askHuggingFace(question);
-    } else {
-      bot.chat('Please ask a question after #ask.');
+  if (message.toLowerCase().startsWith('zhybot3')) {
+    const prompt = message.substring('zhybot3'.length).trim();
+    bot.chat("thinking...");
+    try {
+      const reply = await askHuggingFace(prompt);
+      bot.chat(reply || "Sorry, I had trouble responding");
+    } catch (err) {
+      log(`HuggingFace error: ${err.message}`);
+      bot.chat("Failed to get AI response.");
     }
   }
 }
 
-// Function to interact with Hugging Face API
-async function askHuggingFace(question) {
-  if (!HF_API_KEY) {
-    bot.chat("Hugging Face API key is missing!");
-    return;
+async function askHuggingFace(prompt) {
+  const apiKey = process.env.HUGGINGFACE_API_KEY;
+  if (!apiKey) throw new Error('Hugging Face API key not found in environment');
+
+  const response = await fetch('https://api-inference.huggingface.co/models/google/flan-t5-small', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ inputs: prompt })
+  });
+
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`);
   }
 
-  const url = 'https://api-inference.huggingface.co/models/distilbert-base-uncased';
-  const headers = {
-    'Authorization': `Bearer ${HF_API_KEY}`,
-    'Content-Type': 'application/json'
-  };
-  
-  const body = JSON.stringify({ inputs: question });
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: headers,
-      body: body
-    });
-
-    const data = await response.json();
-
-    if (data && data[0] && data[0].generated_text) {
-      const answer = data[0].generated_text;
-      bot.chat(`Answer: ${answer}`);
-    } else {
-      bot.chat("Sorry, I couldn't get a valid response.");
-    }
-  } catch (error) {
-    bot.chat(`Error while asking Hugging Face: ${error.message}`);
-  }
+  const data = await response.json();
+  return data[0]?.generated_text || "I don't know.";
 }
 
-// Function to make the bot eat if it's hungry
 function eatIfHungry() {
   if (isEating || bot.food === 20) return;
 
@@ -172,7 +155,6 @@ function eatIfHungry() {
     .finally(() => isEating = false);
 }
 
-// Main loop for bot actions
 async function runLoop() {
   while (true) {
     if (!isRunning || sleeping) {
@@ -192,7 +174,6 @@ async function runLoop() {
   }
 }
 
-// Sleep routine function
 async function sleepRoutine() {
   if (sleeping) return;
   const bed = bot.findBlock({
@@ -224,7 +205,6 @@ async function sleepRoutine() {
   }
 }
 
-// Random wander routine function
 async function wanderRoutine() {
   log('Wandering randomly...');
   for (let i = 0; i < 5; i++) {
@@ -237,7 +217,6 @@ async function wanderRoutine() {
   }
 }
 
-// Function to move the bot to a target position
 async function goTo(pos) {
   try {
     await bot.pathfinder.goto(new GoalNear(pos.x, pos.y, pos.z, 1));
@@ -246,7 +225,6 @@ async function goTo(pos) {
   }
 }
 
-// Delay function
 function delay(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
