@@ -3,7 +3,6 @@ const { pathfinder, Movements, goals: { GoalNear } } = require('mineflayer-pathf
 const Vec3 = require('vec3');
 const mcDataLoader = require('minecraft-data');
 const fs = require('fs');
-const fetch = require('node-fetch'); // Use node-fetch v2 for Termux compatibility
 const config = require('./config.json');
 
 let bot, mcData, defaultMove;
@@ -70,41 +69,10 @@ function createBot() {
   });
 }
 
-async function askOpenRouter(message) {
-  try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.openrouter_api_key}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: "openai/gpt-3.5-turbo",
-        messages: [{ role: "user", content: message }]
-      })
-    });
-
-    if (!response.ok) {
-      log(`OpenRouter API error status: ${response.status}`);
-      return null;
-    }
-
-    const data = await response.json();
-    if (data && data.choices && data.choices.length > 0) {
-      return data.choices[0].message.content.trim();
-    } else {
-      return null;
-    }
-  } catch (e) {
-    log(`OpenRouter error: ${e.message}`);
-    return null;
-  }
-}
-
-async function onChat(username, message) {
+function onChat(username, message) {
   if (username === bot.username) return;
 
-  if (message === '!sleep') {
+  if (message === '#sleep') {
     bot.chat("Trying to sleep...");
     sleepRoutine();
     return;
@@ -112,37 +80,25 @@ async function onChat(username, message) {
 
   if (username !== 'ZhyKun') return;
 
-  if (message === '!stop') {
+  if (message === '#stop') {
     isRunning = false;
     bot.chat("Bot paused.");
   }
-  if (message === '!start') {
+  if (message === '#start') {
     isRunning = true;
     bot.chat("Bot resumed.");
   }
-  if (message === '!roam') {
+  if (message === '#roam') {
     bot.chat("Wandering around...");
     wanderRoutine();
   }
-  if (message === '!come') {
+  if (message === '#come') {
     const player = bot.players[username]?.entity;
     if (player) {
       bot.chat('Coming to you!');
       goTo(player.position);
     } else {
       bot.chat('Cannot find you!');
-    }
-  }
-
-  // AI chat trigger: user says "zhybot3 <message>"
-  if (message.toLowerCase().startsWith('zhybot3 ')) {
-    const prompt = message.slice('zhybot3 '.length).trim();
-    bot.chat('thinking...');
-    const reply = await askOpenRouter(prompt);
-    if (reply) {
-      bot.chat(reply);
-    } else {
-      bot.chat('Sorry, I had trouble responding.');
     }
   }
 }
